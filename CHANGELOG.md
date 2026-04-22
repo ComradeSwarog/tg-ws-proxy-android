@@ -30,6 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped versionCode: 1 → 2, versionName: 1.0.0 → 1.1.1
 - Added unit tests for `Balancer`, `DoHResolver`, `RawWebSocket`
 
+## [1.2.0] - 2026-04-23
+
+### Fixed (Critical Stability)
+- **OutOfMemoryError: unable to create new native thread**: `RawWebSocket.connectParallel` and `TgWsProxy.WsPool.refill` now use bounded `Executors.newFixedThreadPool()` (8 and 4 threads) instead of spawning raw `Thread`s per connection attempt. Prevents memory exhaustion under heavy fallback load.
+- **ForegroundServiceDidNotStartInTimeException on sticky restart**: `startForeground()` moved to the very top of `onStartCommand()`, before any `when(intent.action)` branching, guaranteeing the service call is registered within Android 12+ 5-second deadline even on null-intent restarts.
+- **OutOfMemoryError does not trigger graceful shutdown**: Added `CoroutineExceptionHandler` on `serviceScope` and `Thread.setDefaultUncaughtExceptionHandler` in `ProxyService.onCreate()`. On OOM signals proxy stop, foreground removal, and app exit to prevent zombie notification.
+- **Dead / half-open sockets returned from pool**: Added `pingPongCheck()` in `WsPool.get()` and `WsPool.refill()` — sends WebSocket PING and awaits PONG within 3s before considering a connection alive. Dead sockets are closed instead of handed to clients.
+- **CF domain hammering during rapid retries**: `Balancer.markDomainFailed()` now implements exponential backoff: effective TTL = `baseTtl * 2^(failCount-1)`, capped at 30 min. Jitter is adaptive — max ±30s but capped at half of TTL, and disabled entirely when TTL is shorter than jitter range.
+
+### Internal
+- Bumped versionCode: 2 → 3, versionName: 1.1.1 → 1.2.0
+- Updated unit tests to match new `baseTtlMs` parameter name
+
 ## [1.0.0] - 2026-04-22
 
 ### Added (Initial Release)
