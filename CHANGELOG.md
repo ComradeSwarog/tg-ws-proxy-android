@@ -27,8 +27,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Debug: `tg-ws-proxy-android-debug.apk`
 
 ### Internal
-- Bumped versionCode: 1 → 2, versionName: 1.0.0 → 1.1.1
-- Added unit tests for `Balancer`, `DoHResolver`, `RawWebSocket`
+- Bumped versionCode: 2 → 3, versionName: 1.1.1 → 1.2.0
+- Updated unit tests to match new `baseTtlMs` parameter name
+
+## [1.3.0] - 2026-04-23
+
+### Added
+- **WS Frame Fragmentation**: `RawWebSocket.send()` splits large MTProto payloads into binary + continuation frames with random chunk sizes (512–4096 bytes). This reduces fixed-size signature exposure and improves DPI bypass resilience.
+- **WS Frame Padding (self-describing)**: Each frame carries a length-prefix header: `[u16_be payloadLen] [payloadLen bytes payload] [random padding]`. The format is self-describing, allowing safe stripping on the receiving side. Padding is disabled by default; controlled via `ProxyConfig.wsFramePadding`, `wsFramePaddingMinBytes`, `wsFramePaddingMaxBytes`.
+- **DoH Endpoint Rotation**: `DoHResolver.resolve()` now cyclically rotates through configured providers via atomic round-robin (`rotateEndpoints()`). Each call starts from a different endpoint, reducing single-provider lock-in. Enabled by default via `ProxyConfig.dohRotation`.
+
+### Fixed
+- **Length-prefix padding format**: Replaced naive trailing-padding with self-describing `u16_be` header to prevent MTProto framing corruption during pass-through via CF Worker.
+
+### Internal
+- Bumped versionCode: 3 → 4, versionName: 1.2.0 → 1.3.0
+- Added unit tests for `DoHResolver.rotateEndpoints`, `RawWebSocket.encodePaddedPayload`, `RawWebSocket.stripPaddingIfPresent`
+- All 18 unit tests pass
+
+### Documentation
+- Updated `CHANGELOG.md` with new feature descriptions
 
 ## [1.2.0] - 2026-04-23
 

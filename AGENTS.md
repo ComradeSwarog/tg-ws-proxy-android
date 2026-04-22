@@ -90,6 +90,8 @@ Already in `.gitignore`, but remember:
 | `app/src/main/java/com/github/tgwsproxy/TgWsProxy.kt` | Main proxy server |
 | `app/src/main/java/com/github/tgwsproxy/RawWebSocket.kt` | WS client with DoH/parallel connect |
 | `app/src/main/java/com/github/tgwsproxy/ProxyService.kt` | Foreground service |
+| `app/src/main/java/com/github/tgwsproxy/ProxyConfig.kt` | DPI bypass settings (DoH, padding, CF fallback) |
+| `app/src/main/java/com/github/tgwsproxy/DoHResolver.kt` | DoH resolver with endpoint rotation |
 | `app/src/main/java/com/github/tgwsproxy/MainActivity.kt` | UI (tabs, settings, logs) |
 | `app/src/main/java/com/github/tgwsproxy/AppLogger.kt` | File + memory logging with rotation |
 | `app/src/main/res/layout/activity_main.xml` | Main layout |
