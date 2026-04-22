@@ -150,7 +150,7 @@ class RawWebSocket private constructor(
 
             val ok = done.await(timeoutMs + 2000, TimeUnit.MILLISECONDS)
             threads.forEach { it.interrupt() }
-            Thread.sleep(50)
+            try { Thread.sleep(50) } catch (_: InterruptedException) {}
 
             val winningThread = winnerThread.get()
             for ((t, ws) in allWs) {
