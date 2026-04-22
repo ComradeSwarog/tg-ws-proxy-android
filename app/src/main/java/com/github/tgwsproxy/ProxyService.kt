@@ -48,7 +48,19 @@ class ProxyService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand action=${intent?.action}")
+        Log.d(TAG, "onStartCommand action=${intent?.action} startId=$startId flags=$flags")
+        
+        // ALWAYS start foreground immediately to avoid ForegroundServiceDidNotStartInTimeException.
+        // Android 12+ kills the service within 5s if startForeground() is not called.
+        try {
+            val notification = buildNotification(running = true)
+            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start foreground: ${e.message}")
+            // If we can't start foreground, crash gracefully rather than get killed
+            throw e
+        }
+        
         when (intent?.action) {
             ACTION_START -> {
                 val cfg = loadConfig()
@@ -59,6 +71,14 @@ class ProxyService : Service() {
                 stopProxy()
                 stopSelf()
                 return START_NOT_STICKY
+            }
+            else -> {
+                // Null intent (sticky restart) or unknown action: restart proxy if not running
+                if (!isProxyRunning) {
+                    val cfg = config ?: loadConfig()
+                    config = cfg
+                    startProxy(cfg)
+                }
             }
         }
         val workInBackground = PreferenceManager.getDefaultSharedPreferences(this)
