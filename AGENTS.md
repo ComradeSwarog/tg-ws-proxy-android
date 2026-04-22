@@ -49,19 +49,32 @@ Agents MUST NOT rely on `.bat` build scripts — use Gradle wrapper directly:
 
 ### 4. Build Workflow
 
-**Debug APK:**
-```powershell
-cd W:\MyProjects\tg-proxy\tg-ws-proxy-android
-$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat --no-daemon assembleDebug
-# Output: app\build\outputs\apk\debug\app-debug.apk
-```
-
 **Release APK:**
 ```powershell
 cd W:\MyProjects\tg-proxy\tg-ws-proxy-android
 $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat --no-daemon assembleRelease
-# Output: app\build\outputs\apk\release\app-release.apk
+# Gradle output: app\build\outputs\apk\release\app-release.apk
+# MUST rename/copy to:
+Copy-Item app\build\outputs\apk\release\app-release.apk app\build\outputs\apk\release\tg-ws-proxy-android.apk
 ```
+
+**Debug APK:**
+```powershell
+cd W:\MyProjects\tg-proxy\tg-ws-proxy-android
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat --no-daemon assembleDebug
+# Gradle output: app\build\outputs\apk\debug\app-debug.apk
+# MUST rename/copy to:
+Copy-Item app\build\outputs\apk\debug\app-debug.apk app\build\outputs\apk\debug\tg-ws-proxy-android-debug.apk
+```
+
+### APK Naming Convention (enforced)
+
+| Variant | Gradle default | Final required name |
+|---|---|---|
+| Release | `app-release.apk` | `tg-ws-proxy-android.apk` |
+| Debug   | `app-debug.apk`   | `tg-ws-proxy-android-debug.apk` |
+
+Agents **must** copy the default Gradle artifact to the required filename immediately after `BUILD SUCCESSFUL`.
 
 ### 5. Files to Never Commit
 
@@ -87,7 +100,7 @@ Already in `.gitignore`, but remember:
 
 After `BUILD SUCCESSFUL`, verify APK exists:
 ```powershell
-ls app\build\outputs\apk\debug\app-debug.apk
+ls app\build\outputs\apk\release\tg-ws-proxy-android.apk
 # or
-ls app\build\outputs\apk\release\app-release.apk
+ls app\build\outputs\apk\debug\tg-ws-proxy-android-debug.apk
 ```
