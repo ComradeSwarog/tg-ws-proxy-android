@@ -8,6 +8,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -97,40 +98,50 @@ class RawWebSocket private constructor(
                 return null
             }
             // Always keep original IP first if it's direct DC IP
-            addrsToTry.distinct()
+            val finalAddrs = addrsToTry.distinct()
 
-            return if (addrsToTry.size == 1) {
-                connectSingle(addrsToTry[0], domain, timeoutMs, attempt)
+            return if (finalAddrs.size == 1) {
+                connectSingle(finalAddrs[0], domain, timeoutMs, attempt)
             } else {
-                connectParallel(addrsToTry, domain, timeoutMs, attempt)
+                connectParallel(finalAddrs, domain, timeoutMs, attempt)
             }
         }
 
         private fun connectSingle(addr: String, domain: String, timeoutMs: Long, attempt: Int): RawWebSocket? {
-            return rawConnect(addr, domain, timeoutMs).also {
+            return rawConnect(addr, domain, timeoutMs, null).also {
                 if (it != null) AppLogger.i("RawWS", "[attempt $attempt] Connected via single path: $addr -> $domain")
             }
         }
 
         /**
          * Parallel connect to multiple IPs; returns first successful.
+         * Losing threads have their partially-opened sockets closed to prevent FD leaks.
          */
         private fun connectParallel(addrs: List<String>, domain: String, timeoutMs: Long, attempt: Int): RawWebSocket? {
             if (addrs.isEmpty()) return null
             val done = CountDownLatch(1)
             val winner = AtomicReference<RawWebSocket?>(null)
+            val winnerThread = AtomicReference<Thread?>(null)
             val finished = AtomicBoolean(false)
             val threads = mutableListOf<Thread>()
+            val allSockets = ConcurrentHashMap<Thread, Socket>()
+            val allWs = ConcurrentHashMap<Thread, RawWebSocket?>()
             AppLogger.d("RawWS", "[attempt $attempt] Parallel connect to ${addrs.size} IPs for $domain: $addrs")
 
             for (addr in addrs) {
                 val t = Thread {
                     if (finished.get()) return@Thread
-                    val ws = rawConnect(addr, domain, timeoutMs)
-                    if (ws != null && winner.compareAndSet(null, ws)) {
-                        finished.set(true)
-                        done.countDown()
-                        AppLogger.i("RawWS", "[attempt $attempt] Parallel winner: $addr -> $domain")
+                    try {
+                        val ws = rawConnect(addr, domain, timeoutMs, allSockets)
+                        allWs[Thread.currentThread()] = ws
+                        if (ws != null && winner.compareAndSet(null, ws)) {
+                            finished.set(true)
+                            winnerThread.set(Thread.currentThread())
+                            done.countDown()
+                            AppLogger.i("RawWS", "[attempt $attempt] Parallel winner: $addr -> $domain")
+                        }
+                    } catch (_: InterruptedException) {
+                        // interrupted by parent
                     }
                 }
                 threads.add(t); t.start()
@@ -138,29 +149,46 @@ class RawWebSocket private constructor(
 
             val ok = done.await(timeoutMs + 2000, TimeUnit.MILLISECONDS)
             threads.forEach { it.interrupt() }
+            Thread.sleep(50)
+
+            val winningThread = winnerThread.get()
+            for ((t, ws) in allWs) {
+                if (ws != null && t != winningThread) {
+                    try { ws.close() } catch (_: Exception) {}
+                }
+            }
+            for ((t, s) in allSockets) {
+                if (t != winningThread) {
+                    try { s.close() } catch (_: Exception) {}
+                }
+            }
             return if (ok) winner.get() else null
         }
 
-        private fun rawConnect(targetIp: String, domain: String, timeoutMs: Long): RawWebSocket? {
+        private fun rawConnect(targetIp: String, domain: String, timeoutMs: Long, threadSocketMap: java.util.concurrent.ConcurrentHashMap<Thread, Socket>? = null): RawWebSocket? {
             val logTag = "RawWS"
+            var plainSocket: Socket? = null
+            var sslSocket: SSLSocket? = null
             try {
                 val connTimeout = timeoutMs.toInt().coerceIn(3000, 20000)
 
                 // 1. Plain TCP connect
-                val plainSocket = Socket()
-                plainSocket.tcpNoDelay = true
-                plainSocket.sendBufferSize = 256 * 1024
-                plainSocket.receiveBufferSize = 256 * 1024
+                plainSocket = Socket()
+                val ps = plainSocket
+                threadSocketMap?.let { it[Thread.currentThread()] = ps }
+                ps.tcpNoDelay = true
+                ps.sendBufferSize = 256 * 1024
+                ps.receiveBufferSize = 256 * 1024
                 val tcpStart = System.currentTimeMillis()
-                plainSocket.connect(InetSocketAddress(targetIp, 443), connTimeout)
-                plainSocket.soTimeout = connTimeout
+                ps.connect(InetSocketAddress(targetIp, 443), connTimeout)
+                ps.soTimeout = connTimeout
                 AppLogger.d(logTag, "TCP connected $targetIp in ${System.currentTimeMillis() - tcpStart}ms")
 
                 // 2. TLS handshake with SNI + no cert verification
                 val trustAll = arrayOfWorkaroundTrustManagers()
                 val sslContext = SSLContext.getInstance("TLS")
                 sslContext.init(null, trustAll, null)
-                val sslSocket = sslContext.socketFactory.createSocket(
+                sslSocket = sslContext.socketFactory.createSocket(
                     plainSocket, targetIp, 443, true
                 ) as SSLSocket
 
@@ -224,7 +252,7 @@ class RawWebSocket private constructor(
                 }
                 if (responseLines.isEmpty()) {
                     AppLogger.w(logTag, "WS: empty response from $targetIp/$domain")
-                    sslSocket.close()
+                    sslSocket.close(); plainSocket = null; sslSocket = null
                     return null
                 }
                 val firstLine = responseLines[0]
@@ -234,15 +262,20 @@ class RawWebSocket private constructor(
 
                 if (statusCode != 101) {
                     AppLogger.w(logTag, "WS handshake rejected: status=$statusCode for $targetIp/$domain")
-                    sslSocket.close()
+                    sslSocket.close(); plainSocket = null; sslSocket = null
                     return null
                 }
                 sslSocket.soTimeout = 0
                 AppLogger.i(logTag, "WS established $targetIp/$domain")
-                return RawWebSocket(sslSocket.getInputStream(), sslSocket.getOutputStream(), sslSocket)
+                val result = RawWebSocket(sslSocket.getInputStream(), sslSocket.getOutputStream(), sslSocket)
+                plainSocket = null; sslSocket = null // ownership transferred
+                return result
             } catch (e: Exception) {
                 AppLogger.d(logTag, "rawConnect failed $targetIp/$domain: ${e.message}")
                 return null
+            } finally {
+                if (plainSocket != null) { try { plainSocket.close() } catch (_: Exception) {} }
+                if (sslSocket != null) { try { sslSocket.close() } catch (_: Exception) {} }
             }
         }
 

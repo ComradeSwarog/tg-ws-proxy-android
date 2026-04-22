@@ -108,7 +108,7 @@ class TgWsProxy(
                 try {
                     val client = server.accept()
                     client.tcpNoDelay = true
-                    client.soTimeout = 10_000
+                    client.soTimeout = 30_000
                     client.sendBufferSize = config.bufferSize
                     client.receiveBufferSize = config.bufferSize
                     scope.launch { handleClient(client, secretBytes) }
@@ -243,8 +243,11 @@ class TgWsProxy(
                     cfSuccessCount[dcKey] = (cfSuccessCount[dcKey] ?: 0) + 1
                     AppLogger.i(TAG, "CF prewarm OK: DC$dc via $baseDomain")
                     return
+                } else {
+                    balancer.markDomainFailed(baseDomain, ttlMs = 60_000L)
+                    AppLogger.d(TAG, "CF prewarm rejected $baseDomain, blacklisted 1min")
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) { balancer.markDomainFailed(baseDomain, ttlMs = 60_000L) }
         }
         AppLogger.d(TAG, "CF prewarm failed for DC$dc")
     }
@@ -633,6 +636,11 @@ class TgWsProxy(
                     ws.send(relayInit)
                     bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
                     return true
+                } else {
+                    // WS establishment succeeded but handshake was rejected (429, 403, etc.)
+                    // Treat as a soft-failure with shorter blacklist TTL to avoid hammering
+                    balancer.markDomainFailed(baseDomain, ttlMs = 120_000L)
+                    AppLogger.w(TAG, "[$label] DC$dc CF proxy rejected/hit rate-limit by $baseDomain, blacklisted 2min")
                 }
             } catch (e: CancellationException) {
                 AppLogger.d(TAG, "[$label] DC$dc CF fallback cancelled")

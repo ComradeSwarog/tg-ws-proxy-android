@@ -10,7 +10,7 @@ class Balancer {
     private var domains: List<String> = emptyList()
     private val dcToDomain = mutableMapOf<Int, String>()
     private val domainBlacklist = mutableMapOf<String, Long>() // domain -> expireAt
-    private val BlacklistTTL = 300_000L // 5 min
+    val BlacklistTTL = 300_000L // 5 min
 
     @Synchronized
     fun updateDomainsList(domainsList: List<String>) {
@@ -35,8 +35,8 @@ class Balancer {
     }
 
     @Synchronized
-    fun markDomainFailed(domain: String) {
-        domainBlacklist[domain] = System.currentTimeMillis() + BlacklistTTL
+    fun markDomainFailed(domain: String, ttlMs: Long = BlacklistTTL) {
+        domainBlacklist[domain] = System.currentTimeMillis() + ttlMs
     }
 
     @Synchronized

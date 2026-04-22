@@ -23,20 +23,32 @@ object DoHResolver {
         override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
     })
 
-    init {
-        try {
+    /**
+     * Create a local SSLContext that trusts all certs; never mutate the global default.
+     */
+    private fun createTrustAllSocketFactory(): javax.net.ssl.SSLSocketFactory? {
+        return try {
             val sc = SSLContext.getInstance("TLS")
             sc.init(null, trustAllCerts, java.security.SecureRandom())
-            HttpsURLConnection.setDefaultSSLSocketFactory(sc.socketFactory)
-        } catch (_: Exception) {}
+            sc.socketFactory
+        } catch (_: Exception) { null }
     }
 
     fun resolve(hostname: String, endpoints: List<String>, timeoutMs: Int = 3000): List<String> {
+        // If hostname is already an IP, return immediately — DoH is pointless.
+        if (isIpAddress(hostname)) return listOf(hostname)
+
         val results = mutableListOf<String>()
+        val localSslFactory = createTrustAllSocketFactory()
         for (ep in endpoints) {
             try {
                 val url = if (ep.contains("?")) ep else "$ep?name=$hostname&type=A"
                 val conn = URL(url).openConnection() as HttpURLConnection
+                // Do NOT touch global defaults; apply local SSL factory only for HTTPS
+                if (conn is HttpsURLConnection && localSslFactory != null) {
+                    conn.sslSocketFactory = localSslFactory
+                    conn.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
+                }
                 conn.connectTimeout = timeoutMs
                 conn.readTimeout = timeoutMs
                 conn.setRequestProperty("Accept", "application/dns-json")
@@ -65,6 +77,14 @@ object DoHResolver {
             }
         }
         return results.distinct()
+    }
+
+    /**
+     * Check if a string is a dotted-decimal IPv4 address.
+     * Visible for unit tests (same Gradle module).
+     */
+    internal fun isIpAddress(s: String): Boolean {
+        return s.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))
     }
 
     private fun parseJson(text: String): List<String> {
