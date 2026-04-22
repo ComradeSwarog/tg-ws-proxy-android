@@ -1,0 +1,30 @@
+# Android / Gradle
+.gradle
+/gradle
+/local.properties
+/.idea
+captures/.externalNativeBuild.cxxbuild/
+*.iml
+
+# Generated build files
+/app/build
+/app/release
+/app/debug
+/app/intermediates
+
+# Secrets
+release.keystore
+*.jks
+
+# Temp / local scripts
+write_files.py
+*.bat
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+*.swp
+*.swo

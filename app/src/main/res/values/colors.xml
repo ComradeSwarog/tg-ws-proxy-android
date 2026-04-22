@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="tg_blue">#2AABEE</color>
+    <color name="tg_blue_dark">#229ED9</color>
+    <color name="tg_blue_hover">#1C8BC4</color>
+    <color name="status_active">#22C55E</color>
+    <color name="status_inactive">#94A3B8</color>
+    <color name="bg_dark">#1C1C1E</color>
+    <color name="card_dark">#2C2C2E</color>
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#B3FFFFFF</color>
+    <color name="field_border">#3B3B3B</color>
+    <color name="bg_light">#FAFAFA</color>
+    <color name="card_light">#FFFFFF</color>
+    <color name="text_primary_light">#1C1C1E</color>
+    <color name="text_secondary_light">#666666</color>
+    <color name="field_border_light">#E0E0E0</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>
