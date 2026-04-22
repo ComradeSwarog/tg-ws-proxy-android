@@ -134,7 +134,7 @@ class RawWebSocket private constructor(
                     if (finished.get()) return@Thread
                     try {
                         val ws = rawConnect(addr, domain, timeoutMs, allSockets)
-                        allWs[Thread.currentThread()] = ws
+                        if (ws != null) allWs[Thread.currentThread()] = ws
                         if (ws != null && winner.compareAndSet(null, ws)) {
                             finished.set(true)
                             winnerThread.set(Thread.currentThread())
