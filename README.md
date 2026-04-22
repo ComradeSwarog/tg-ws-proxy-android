@@ -65,18 +65,35 @@ The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as 
 
 ---
 
-## Download
+## Screenshot
 
-| Variant | File | Size |
-|---|---|---|
-| **Release** (recommended) | `tg-ws-proxy-android.apk` | ~2.4 MB |
-| Debug | `tg-ws-proxy-android-debug.apk` | ~6.8 MB |
-
-Download from [Releases](../../releases) or build from source.
+![App Screenshot](screenshots/app-screenshot.jpg)
 
 ---
 
-## Build from Source
+## Download
+
+| Variant | File |
+|---|---|
+| **Release** (recommended) | `tg-ws-proxy-android.apk` |
+| Debug | `tg-ws-proxy-android-debug.apk` |
+
+Download from [Releases](../../releases).
+
+### SHA-256 Checksum
+
+```
+94BC618BFB18A57852728513C616CC9A9AEE9A00F11637079E72023D9B8717F7
+```
+
+Verify after download:
+```powershell
+# Windows PowerShell
+Get-FileHash -Path "tg-ws-proxy-android.apk" -Algorithm SHA256
+
+# Linux / macOS
+sha256sum tg-ws-proxy-android.apk
+```
 
 ```bash
 # Debug APK
