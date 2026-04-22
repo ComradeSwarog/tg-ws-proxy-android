@@ -15,6 +15,12 @@ data class ProxyConfig(
     var fallbackCfproxyPriority: Boolean = true,
     var cfproxyUserDomain: String = "",
     var fakeTlsDomain: String = "",
+    // --- DPI bypass: WS frame padding ---
+    var wsFramePadding: Boolean = false,
+    var wsFramePaddingMinBytes: Int = 8,
+    var wsFramePaddingMaxBytes: Int = 32,
+    // --- DPI bypass: DoH endpoint rotation ---
+    var dohRotation: Boolean = true,
     // --- DPI bypass settings ---
     var useDoH: Boolean = true,
     var dohEndpoints: List<String> = listOf(

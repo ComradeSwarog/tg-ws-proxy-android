@@ -66,6 +66,11 @@ class TgWsProxy(
         dcFailUntil.clear()
         cfSuccessCount.clear()
         wsPool.reset()
+        // Pass DPI-bypass config to RawWebSocket static fields
+        RawWebSocket.framePaddingEnabled = config.wsFramePadding
+        RawWebSocket.framePaddingMinBytes = config.wsFramePaddingMinBytes
+        RawWebSocket.framePaddingMaxBytes = config.wsFramePaddingMaxBytes
+        RawWebSocket.dohRotationEnabled = config.dohRotation
         AppLogger.i(TAG, "Config: host=${config.host} port=${config.port} fakeTls=${config.fakeTlsDomain} cfproxy=${config.fallbackCfproxy} pool=${config.poolSize}")
         AppLogger.i(TAG, "DC redirects: ${config.dcRedirects}")
         if (config.fallbackCfproxy) {
@@ -284,7 +289,7 @@ class TgWsProxy(
             val fakeDomain = if (config.fakeTlsDomain.isNotEmpty()) config.fakeTlsDomain else domains.firstOrNull() ?: return null
             for (domain in domains) {
                 try {
-                    val resolved = DoHResolver.resolve(domain, config.dohEndpoints, 3000)
+                    val resolved = DoHResolver.resolve(domain, config.dohEndpoints, 3000, config.dohRotation)
                     for (ip in resolved) {
                         AppLogger.d(TAG, "[$label] DC$dc trying resolved IP $ip with SNI=$fakeDomain")
                         val ws = RawWebSocket.connect(ip, fakeDomain, tmo, useDoH = false, retryMax = 1)

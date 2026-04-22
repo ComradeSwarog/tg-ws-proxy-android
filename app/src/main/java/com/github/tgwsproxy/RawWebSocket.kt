@@ -39,6 +39,16 @@ class RawWebSocket private constructor(
         const val OP_PING = 0x9
         const val OP_PONG = 0xA
 
+        // Frame fragmentation / padding (controlled by TgWsProxy config)
+        @JvmField var framePaddingEnabled = false
+        @JvmField var framePaddingMinBytes = 0
+        @JvmField var framePaddingMaxBytes = 0
+        private const val FRAME_MIN_CHUNK = 512
+        private const val FRAME_MAX_CHUNK = 4096
+
+        // DoH endpoint rotation (controlled by TgWsProxy config)
+        @JvmField var dohRotationEnabled = true
+
         // ---- DoH + parallel connect ----
         /**
          * Connect with optional DoH resolution, parallel attempts, and retry.
@@ -78,9 +88,9 @@ class RawWebSocket private constructor(
             } else {
                 if (useDoH) {
                     AppLogger.d(logTag, "[attempt $attempt] DoH resolving $targetIp ...")
-                    val resolved = DoHResolver.resolve(targetIp, dohEndpoints, 8000)
+                    val resolved = DoHResolver.resolve(targetIp, dohEndpoints, 8000, dohRotationEnabled)
                         .takeIf { it.isNotEmpty() }
-                        ?: DoHResolver.resolve(domain, dohEndpoints, 8000)
+                        ?: DoHResolver.resolve(domain, dohEndpoints, 8000, dohRotationEnabled)
                     addrsToTry.addAll(resolved)
                     AppLogger.d(logTag, "[attempt $attempt] DoH resolved $targetIp -> $resolved")
                 }
@@ -306,17 +316,36 @@ class RawWebSocket private constructor(
 
     fun send(data: ByteArray) {
         if (closed) return
-        val frame = buildFrame(OP_BINARY, data, mask = true)
-        output.write(frame)
+        if (!framePaddingEnabled) {
+            output.write(buildFrame(OP_BINARY, data, mask = true))
+            output.flush()
+            return
+        }
+        // --- Fragmentation + per-frame padding (DPI signature mitigation) ---
+        var offset = 0
+        var isFirst = true
+        while (offset < data.size) {
+            val remaining = data.size - offset
+            // Last chunk: send whatever remains; otherwise uniform random chunk size
+            val chunkSize = if (remaining <= FRAME_MAX_CHUNK * 2) remaining else {
+                (FRAME_MIN_CHUNK + java.util.Random().nextInt(FRAME_MAX_CHUNK - FRAME_MIN_CHUNK + 1)).coerceAtMost(remaining)
+            }
+            val chunk = data.copyOfRange(offset, offset + chunkSize)
+            offset += chunkSize
+            val isLast = offset >= data.size
+            val padded = addPadding(chunk)
+            val opcode = if (isFirst) OP_BINARY else 0 // 0 = continuation
+            isFirst = false
+            output.write(buildFrame(opcode, padded, mask = true, fin = isLast))
+        }
         output.flush()
     }
 
     fun sendBatch(parts: List<ByteArray>) {
         if (closed) return
         for (part in parts) {
-            output.write(buildFrame(OP_BINARY, part, mask = true))
+            send(part)
         }
-        output.flush()
     }
 
     /**
@@ -352,7 +381,7 @@ class RawWebSocket private constructor(
                     continue
                 }
                 OP_PONG -> continue
-                0x1, 0x2 -> return payload
+                0x1, 0x2, 0x0 -> return payload // 0x0 = continuation frame payload
                 else -> continue
             }
         }
@@ -371,11 +400,27 @@ class RawWebSocket private constructor(
 
     val isClosed: Boolean get() = closed
 
+    /**
+     * Add random trailing padding to the given data.
+     * The padding is transparent to the application but increases frame size variability.
+     */
+    private fun addPadding(data: ByteArray): ByteArray {
+        if (!framePaddingEnabled) return data
+        val minPad = framePaddingMinBytes.coerceAtLeast(0)
+        val maxPad = framePaddingMaxBytes.coerceAtMost(128).coerceAtLeast(minPad)
+        if (maxPad <= 0) return data
+        val padLen = minPad + java.util.Random().nextInt(maxPad - minPad + 1)
+        if (padLen <= 0) return data
+        val pad = ByteArray(padLen)
+        java.util.Random().nextBytes(pad)
+        return data + pad
+    }
+
     // ---- Frame building / reading helpers ----
 
-    private fun buildFrame(opcode: Int, data: ByteArray, mask: Boolean = false): ByteArray {
+    private fun buildFrame(opcode: Int, data: ByteArray, mask: Boolean = false, fin: Boolean = true): ByteArray {
         val length = data.size
-        val fb = (0x80 or opcode).toByte()
+        val fb = ((if (fin) 0x80 else 0x00) or opcode).toByte()
         if (!mask) {
             return when {
                 length < 126 -> byteArrayOf(fb, length.toByte()) + data

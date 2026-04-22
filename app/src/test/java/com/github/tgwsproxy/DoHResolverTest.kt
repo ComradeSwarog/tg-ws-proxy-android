@@ -6,6 +6,27 @@ import org.junit.Test
 class DoHResolverTest {
 
     @Test
+    fun `rotateEndpoints cycles through providers`() {
+        val eps = listOf("cloudflare", "google", "quad9")
+        val r1 = DoHResolver.rotateEndpoints(eps, rotation = true)
+        val r2 = DoHResolver.rotateEndpoints(eps, rotation = true)
+        // Both should contain all 3 endpoints
+        assertEquals(3, r1.size)
+        assertEquals(3, r2.size)
+        assertEquals(setOf("cloudflare", "google", "quad9"), r1.toSet())
+        assertEquals(setOf("cloudflare", "google", "quad9"), r2.toSet())
+        // With 3 providers, r1 and r2 are different if AtomicInteger increments
+        assertNotEquals(r1, r2)
+    }
+
+    @Test
+    fun `rotateEndpoints with rotation disabled returns original order`() {
+        val eps = listOf("a", "b", "c")
+        val r = DoHResolver.rotateEndpoints(eps, rotation = false)
+        assertEquals(eps, r)
+    }
+
+    @Test
     fun `isIpAddress returns true for valid IPv4 strings`() {
         assertTrue(DoHResolver.isIpAddress("149.154.167.220"))
         assertTrue(DoHResolver.isIpAddress("8.8.8.8"))

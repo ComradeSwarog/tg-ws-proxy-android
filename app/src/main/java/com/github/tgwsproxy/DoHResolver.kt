@@ -6,6 +6,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
+import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
@@ -23,6 +24,9 @@ object DoHResolver {
         override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
     })
 
+    /** Thread-safe round-robin index for DoH endpoint rotation. */
+    private val endpointIndex = AtomicInteger(0)
+
     /**
      * Create a local SSLContext that trusts all certs; never mutate the global default.
      */
@@ -34,13 +38,24 @@ object DoHResolver {
         } catch (_: Exception) { null }
     }
 
-    fun resolve(hostname: String, endpoints: List<String>, timeoutMs: Int = 3000): List<String> {
+    /**
+     * Return a cyclically rotated copy of the endpoints list so that each call
+     * starts from a different provider. If rotation is disabled, list is returned as-is.
+     */
+    fun rotateEndpoints(endpoints: List<String>, rotation: Boolean = true): List<String> {
+        if (endpoints.isEmpty() || !rotation) return endpoints
+        val idx = endpointIndex.getAndIncrement() % endpoints.size
+        return endpoints.drop(idx) + endpoints.take(idx)
+    }
+
+    fun resolve(hostname: String, endpoints: List<String>, timeoutMs: Int = 3000, rotation: Boolean = true): List<String> {
         // If hostname is already an IP, return immediately — DoH is pointless.
+        val results = mutableListOf<String>()
         if (isIpAddress(hostname)) return listOf(hostname)
 
-        val results = mutableListOf<String>()
         val localSslFactory = createTrustAllSocketFactory()
-        for (ep in endpoints) {
+        val rotated = rotateEndpoints(endpoints, rotation)
+        for (ep in rotated) {
             try {
                 val url = if (ep.contains("?")) ep else "$ep?name=$hostname&type=A"
                 val conn = URL(url).openConnection() as HttpURLConnection
