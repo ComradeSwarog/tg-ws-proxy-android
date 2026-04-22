@@ -49,6 +49,32 @@ class RawWebSocket private constructor(
         // DoH endpoint rotation (controlled by TgWsProxy config)
         @JvmField var dohRotationEnabled = true
 
+        /** Length-prefix frame padding helpers (testable via static fields) */
+        internal fun encodePaddedPayload(data: ByteArray): ByteArray {
+            if (!framePaddingEnabled) return data
+            val minPad = framePaddingMinBytes.coerceAtLeast(0)
+            val maxPad = framePaddingMaxBytes.coerceAtMost(256).coerceAtLeast(minPad)
+            if (maxPad <= 0) return data
+            val padLen = minPad + java.util.Random().nextInt(maxPad - minPad + 1)
+            if (padLen <= 0) return data
+            val pad = ByteArray(padLen)
+            java.util.Random().nextBytes(pad)
+            // Length header = 2 bytes, big-endian unsigned short
+            val lengthHeader = byteArrayOf(
+                ((data.size shr 8) and 0xFF).toByte(),
+                (data.size and 0xFF).toByte()
+            )
+            return lengthHeader + data + pad
+        }
+
+        internal fun stripPaddingIfPresent(data: ByteArray): ByteArray {
+            if (!framePaddingEnabled || data.size < 2) return data
+            val payloadLen = ((data[0].toInt() and 0xFF) shl 8) or (data[1].toInt() and 0xFF)
+            return if (payloadLen > 0 && payloadLen + 2 <= data.size) {
+                data.copyOfRange(2, 2 + payloadLen)
+            } else data
+        }
+
         // ---- DoH + parallel connect ----
         /**
          * Connect with optional DoH resolution, parallel attempts, and retry.
@@ -333,7 +359,7 @@ class RawWebSocket private constructor(
             val chunk = data.copyOfRange(offset, offset + chunkSize)
             offset += chunkSize
             val isLast = offset >= data.size
-            val padded = addPadding(chunk)
+            val padded = encodePaddedPayload(chunk)
             val opcode = if (isFirst) OP_BINARY else 0 // 0 = continuation
             isFirst = false
             output.write(buildFrame(opcode, padded, mask = true, fin = isLast))
@@ -381,7 +407,10 @@ class RawWebSocket private constructor(
                     continue
                 }
                 OP_PONG -> continue
-                0x1, 0x2, 0x0 -> return payload // 0x0 = continuation frame payload
+                0x1, 0x2, 0x0 -> {
+                    // For padded / fragmented mode: strip length-prefix + trailing padding
+                    return stripPaddingIfPresent(payload)
+                }
                 else -> continue
             }
         }
@@ -399,22 +428,6 @@ class RawWebSocket private constructor(
     }
 
     val isClosed: Boolean get() = closed
-
-    /**
-     * Add random trailing padding to the given data.
-     * The padding is transparent to the application but increases frame size variability.
-     */
-    private fun addPadding(data: ByteArray): ByteArray {
-        if (!framePaddingEnabled) return data
-        val minPad = framePaddingMinBytes.coerceAtLeast(0)
-        val maxPad = framePaddingMaxBytes.coerceAtMost(128).coerceAtLeast(minPad)
-        if (maxPad <= 0) return data
-        val padLen = minPad + java.util.Random().nextInt(maxPad - minPad + 1)
-        if (padLen <= 0) return data
-        val pad = ByteArray(padLen)
-        java.util.Random().nextBytes(pad)
-        return data + pad
-    }
 
     // ---- Frame building / reading helpers ----
 

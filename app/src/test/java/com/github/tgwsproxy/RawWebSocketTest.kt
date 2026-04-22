@@ -6,6 +6,41 @@ import org.junit.Test
 class RawWebSocketTest {
 
     @Test
+    fun `encodePaddedPayload creates length-prefixed padded data that round-trips correctly`() {
+        val original = byteArrayOf(0x01, 0xAA.toByte(), 0x55, 0xBE.toByte(), 0xEF.toByte())
+        RawWebSocket.framePaddingEnabled = true
+        RawWebSocket.framePaddingMinBytes = 4
+        RawWebSocket.framePaddingMaxBytes = 8
+
+        val encoded = RawWebSocket.encodePaddedPayload(original)
+        assertTrue("Encoded must have length header (2) + payload + padding", encoded.size >= 2 + original.size + 4)
+
+        val stripped = RawWebSocket.stripPaddingIfPresent(encoded)
+        assertArrayEquals("Stripped payload must equal original", original, stripped)
+
+        // cleanup
+        RawWebSocket.framePaddingEnabled = false
+        RawWebSocket.framePaddingMinBytes = 0
+        RawWebSocket.framePaddingMaxBytes = 0
+    }
+
+    @Test
+    fun `encodePaddedPayload disabled returns original data unchanged`() {
+        val data = byteArrayOf(1, 2, 3, 4, 5)
+        RawWebSocket.framePaddingEnabled = false
+        val result = RawWebSocket.encodePaddedPayload(data)
+        assertArrayEquals(data, result)
+    }
+
+    @Test
+    fun `stripPaddingIfPresent handles non-padded payload gracefully when disabled`() {
+        val data = byteArrayOf(0x09, 0x00, 0xAA.toByte(), 0xBB.toByte())
+        RawWebSocket.framePaddingEnabled = false
+        val result = RawWebSocket.stripPaddingIfPresent(data)
+        assertArrayEquals(data, result)
+    }
+
+    @Test
     fun `OP constants match expected values`() {
         assertEquals(0x2, RawWebSocket.OP_BINARY)
         assertEquals(0x8, RawWebSocket.OP_CLOSE)
