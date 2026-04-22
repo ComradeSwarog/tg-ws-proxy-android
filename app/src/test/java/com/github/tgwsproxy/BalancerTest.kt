@@ -32,7 +32,7 @@ class BalancerTest {
     fun `getDomainsForDc returns expired blacklisted domain`() {
         val b = Balancer()
         b.updateDomainsList(listOf("a.com", "b.com"))
-        b.markDomainFailed("a.com", ttlMs = -1L) // already expired
+        b.markDomainFailed("a.com", baseTtlMs = -1L) // already expired
 
         val result = b.getDomainsForDc(2).asSequence().toList()
         assertTrue("Expired blacklist domain should be available again", "a.com" in result)
@@ -42,7 +42,7 @@ class BalancerTest {
     fun `markDomainFailed custom TTL respected`() {
         val b = Balancer()
         b.updateDomainsList(listOf("x.com"))
-        b.markDomainFailed("x.com", ttlMs = 1_000L)
+        b.markDomainFailed("x.com", baseTtlMs = 1_000L)
         val before = b.getDomainsForDc(2).asSequence().toList()
         assertTrue("x.com should be blacklisted", "x.com" !in before)
 
@@ -56,7 +56,7 @@ class BalancerTest {
         val b = Balancer()
         b.updateDomainsList(listOf("a.com", "b.com"))
         b.updateDomainForDc(2, "a.com")
-        b.markDomainFailed("b.com", ttlMs = -1L) // expired
+        b.markDomainFailed("b.com", baseTtlMs = -1L) // expired
 
         b.updateDomainsList(listOf("a.com", "b.com", "c.com"))
         val result = b.getDomainsForDc(2).asSequence().toList()

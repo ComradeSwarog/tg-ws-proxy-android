@@ -244,10 +244,10 @@ class TgWsProxy(
                     AppLogger.i(TAG, "CF prewarm OK: DC$dc via $baseDomain")
                     return
                 } else {
-                    balancer.markDomainFailed(baseDomain, ttlMs = 60_000L)
+                    balancer.markDomainFailed(baseDomain, baseTtlMs = 60_000L)
                     AppLogger.d(TAG, "CF prewarm rejected $baseDomain, blacklisted 1min")
                 }
-            } catch (_: Exception) { balancer.markDomainFailed(baseDomain, ttlMs = 60_000L) }
+            } catch (_: Exception) { balancer.markDomainFailed(baseDomain, baseTtlMs = 60_000L) }
         }
         AppLogger.d(TAG, "CF prewarm failed for DC$dc")
     }
@@ -301,6 +301,7 @@ class TgWsProxy(
     private inner class WsPool {
         private val idle = ConcurrentHashMap<Pair<Int, Boolean>, LinkedBlockingDeque<Pair<RawWebSocket, Long>>>()
         private val refilling = ConcurrentHashMap<Pair<Int, Boolean>, Boolean>()
+        private val refillExecutor = java.util.concurrent.Executors.newFixedThreadPool(4)
 
         fun get(dc: Int, isMedia: Boolean, targetIp: String, domains: List<String>): RawWebSocket? {
             val key = Pair(dc, isMedia)
@@ -313,6 +314,11 @@ class TgWsProxy(
                     try { pooled.first.close() } catch (_: Exception) {}
                     continue
                 }
+                // Health-check: send PING and expect PONG within 3 seconds
+                if (!pingPongCheck(pooled.first)) {
+                    try { pooled.first.close() } catch (_: Exception) {}
+                    continue
+                }
                 stats.poolHits.incrementAndGet()
                 scheduleRefill(key, targetIp, domains)
                 return pooled.first
@@ -320,6 +326,22 @@ class TgWsProxy(
             stats.poolMisses.incrementAndGet()
             scheduleRefill(key, targetIp, domains)
             return null
+        }
+
+        private fun pingPongCheck(ws: RawWebSocket): Boolean {
+            try {
+                ws.ping(byteArrayOf(0x01, 0x02, 0x03, 0x04))
+                val start = System.currentTimeMillis()
+                while (System.currentTimeMillis() - start < 3000) {
+                    val frame = ws.recv() ?: return false
+                    // PONG received
+                    continue
+                }
+                // If we got here without Exception and within 3s, assume alive
+                return true
+            } catch (_: Exception) {
+                return false
+            }
         }
 
         private fun scheduleRefill(key: Pair<Int, Boolean>, targetIp: String, domains: List<String>) {
@@ -335,15 +357,22 @@ class TgWsProxy(
             val bucket = idle.getOrPut(key) { LinkedBlockingDeque() }
             val needed = config.poolSize - bucket.size
             if (needed <= 0) return
-            val threads = mutableListOf<Thread>()
+            val futures = mutableListOf<java.util.concurrent.Future<*>>()
             for (i in 0 until needed) {
-                val t = Thread {
+                val future = refillExecutor.submit {
                     val ws = connectRawWsEnhanced(targetIp, domains, 8000, dc, isMedia, "pool")
-                    if (ws != null) bucket.put(Pair(ws, System.currentTimeMillis()))
+                    if (ws != null) {
+                        // Ping check before adding to pool
+                        if (pingPongCheck(ws)) {
+                            bucket.put(Pair(ws, System.currentTimeMillis()))
+                        } else {
+                            try { ws.close() } catch (_: Exception) {}
+                        }
+                    }
                 }
-                threads.add(t); t.start()
+                futures.add(future)
             }
-            for (t in threads) { try { t.join(10_000) } catch (e: Exception) {} }
+            for (f in futures) { try { f.get(10_000, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Exception) {} }
             Log.d(TAG, "WS pool refilled DC$dc${if (isMedia) "m" else ""}: ${bucket.size} ready")
         }
 
@@ -639,7 +668,7 @@ class TgWsProxy(
                 } else {
                     // WS establishment succeeded but handshake was rejected (429, 403, etc.)
                     // Treat as a soft-failure with shorter blacklist TTL to avoid hammering
-                    balancer.markDomainFailed(baseDomain, ttlMs = 120_000L)
+                    balancer.markDomainFailed(baseDomain, baseTtlMs = 120_000L)
                     AppLogger.w(TAG, "[$label] DC$dc CF proxy rejected/hit rate-limit by $baseDomain, blacklisted 2min")
                 }
             } catch (e: CancellationException) {

@@ -38,13 +38,37 @@ class ProxyService : Service() {
 
     private var proxy: TgWsProxy? = null
     private var config: ProxyConfig? = null
-    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val serviceScope = CoroutineScope(
+        Dispatchers.IO + SupervisorJob() + CoroutineExceptionHandler { _, throwable ->
+            Log.e(TAG, "Coroutine exception: ${throwable.message}", throwable)
+            if (throwable is OutOfMemoryError) {
+                Log.e(TAG, "OOM in serviceScope — triggering graceful shutdown")
+                stopProxy()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+        }
+    )
     private var domainRefreshJob: Job? = null
     private val balancer = Balancer()
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            Log.e(TAG, "Uncaught exception on ${thread.name}: ${throwable.message}", throwable)
+            if (throwable is OutOfMemoryError) {
+                Log.e(TAG, "OOM detected — graceful shutdown")
+                stopProxy()
+                try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
+            }
+            stopSelf()
+            if (throwable is OutOfMemoryError) {
+                android.os.Process.killProcess(android.os.Process.myPid())
+                System.exit(10)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

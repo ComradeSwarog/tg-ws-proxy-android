@@ -115,6 +115,12 @@ class RawWebSocket private constructor(
         }
 
         /**
+         * Thread-safe ExecutorService for all parallel network operations in RawWebSocket.
+         * Prevents OutOfMemoryError: unable to create new native thread.
+         */
+        private val connectExecutor = Executors.newFixedThreadPool(8)
+
+        /**
          * Parallel connect to multiple IPs; returns first successful.
          * Losing threads have their partially-opened sockets closed to prevent FD leaks.
          */
@@ -124,14 +130,14 @@ class RawWebSocket private constructor(
             val winner = AtomicReference<RawWebSocket?>(null)
             val winnerThread = AtomicReference<Thread?>(null)
             val finished = AtomicBoolean(false)
-            val threads = mutableListOf<Thread>()
             val allSockets = ConcurrentHashMap<Thread, Socket>()
             val allWs = ConcurrentHashMap<Thread, RawWebSocket?>()
+            val futures = mutableListOf<java.util.concurrent.Future<*>>()
             AppLogger.d("RawWS", "[attempt $attempt] Parallel connect to ${addrs.size} IPs for $domain: $addrs")
 
             for (addr in addrs) {
-                val t = Thread {
-                    if (finished.get()) return@Thread
+                val future = connectExecutor.submit {
+                    if (finished.get()) return@submit
                     try {
                         val ws = rawConnect(addr, domain, timeoutMs, allSockets)
                         if (ws != null) allWs[Thread.currentThread()] = ws
@@ -143,13 +149,15 @@ class RawWebSocket private constructor(
                         }
                     } catch (_: InterruptedException) {
                         // interrupted by parent
+                    } catch (_: Throwable) {
+                        // ignore any exception in losing thread
                     }
                 }
-                threads.add(t); t.start()
+                futures.add(future)
             }
 
             val ok = done.await(timeoutMs + 2000, TimeUnit.MILLISECONDS)
-            threads.forEach { it.interrupt() }
+            futures.forEach { it.cancel(true) }
             try { Thread.sleep(50) } catch (_: InterruptedException) {}
 
             val winningThread = winnerThread.get()
