@@ -19,10 +19,11 @@ android {
 
     signingConfigs {
         create("release") {
+            // NOTE: For public forks, replace with your own keystore or use debug signing.
             storeFile = file("../release.keystore")
-            storePassword = "tgwsproxy"
+            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: "tgwsproxy"
             keyAlias = "release"
-            keyPassword = "tgwsproxy"
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "tgwsproxy"
         }
     }
 

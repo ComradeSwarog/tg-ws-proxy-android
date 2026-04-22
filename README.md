@@ -1,89 +1,177 @@
 # tg-ws-proxy-android
 
-Telegram MTProto WebSocket Bridge Proxy для Android.  
-Порт [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) на Kotlin.
+[![Android](https://img.shields.io/badge/Android-8.0%2B-green)](https://developer.android.com/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.9-blueviolet)](https://kotlinlang.org/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Возможности
+> Android Kotlin port of [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) by [Flowseal](https://github.com/Flowseal).
+>
+> A **Telegram MTProto WebSocket Bridge Proxy** with advanced DPI bypass for Android devices.
 
-- **MTProto — WebSocket мост** к серверам Telegram
-- **DoH (DNS-over-HTTPS)** — обход блокировки DNS
-- **CF Proxy Fallback** — fallback через Cloudflare Worker (автоматически при недоступности прямых IP)
-- **Parallel Connect** — параллельное подключение к нескольким IP для ускорения соединения
-- **Auto Fake TLS** — автоматическая маскировка SNI
-- **Media через CF** — медиа-файлы через Cloudflare для экономии трафика
-- **Pre-warmed CF Pool** — фоновое тестирование CF перед первым подключением, подключение менее 1 секунды
-- **Session Balancing** — поддержка до 10 параллельных соединений, быстрое переподключение
-- **Foreground Service** с уведомлением и опцией «Работать в фоне»
-- **Экспорт логов** в файл (.txt) для анализа
+---
 
-## Скриншоты / UI
+## What is this?
 
-```
-[Статус прокси]
-[Включить / Выключить]          ← запускает foreground service
-[Открыть в Telegram]             ← 64dp для удобства
-[Настройки (scroll)]
-    Host / Port / Secret / DC:IP
-    Расширенные настройки обхода (все ON по умолчанию)
-    [Сохранить настройки]
-```
+**tg-ws-proxy-android** is an Android application that creates a local MTProto proxy server on your phone. It connects to Telegram's WebSocket (WS) endpoints using DPI-bypass techniques: DoH resolution, Cloudflare fallback, parallel connections, and fake TLS handshakes.
 
-## Требования
+### Why not just use the original Python proxy?
 
-- Android 8.0 (API 26) и выше
-- Доступ к сети
+The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as a Python CLI on desktop. This project:
+- **Ported to Android** using Kotlin + Android SDK 34
+- **Runs as a foreground service** with persistent notification
+- **GUI settings** instead of editing text files
+- **In-app log viewer** with export/sharing
+- **Optimised for mobile network** — less battery usage than Python + Termux
+- **Fixed critical stability issues** discovered during real-world testing
 
-## Сборка
+---
 
-```bash
-./gradlew assembleDebug
-```
+## Features
 
-Release:
-```bash
-./gradlew assembleRelease
-```
-
-## Режимы работы
-
-| Режим | Описание |
+| Feature | Description |
 |---|---|
-| **Прямой WebSocket** | Подключение к `kws{dc}.web.telegram.org` через DoH + параллельный connect |
-| **CF Fallback** | Если прямой IP блокируется — автоматический fallback через Cloudflare |
-| **TCP Fallback** | Резервный TCP-коннект к известным IP DC если CF тоже недоступен |
-| **Cold-start** | При первом запуске (пока нет истории CF) direct connect пропускается для скорости |
+| **MTProto ↔ WebSocket Bridge** | Transparent bridge between Telegram app and Telegram DCs |
+| **DoH (DNS-over-HTTPS)** | Bypass DNS spoofing with encrypted DNS resolution |
+| **CF Proxy Fallback** | Automatic fallback via Cloudflare Workers if direct IPs are blocked |
+| **Parallel Connect** | Race multiple IPs simultaneously for sub-second handshakes |
+| **Auto Fake TLS** | Automatic TLS SNI camouflage for DPI bypass |
+| **Media via CF** | Route media traffic through Cloudflare to save bandwidth |
+| **Pre-warmed CF Pool** | Background health-check before first real connection (< 1s cold-start) |
+| **Connection Pool** | Keep-alive pool with automatic refilling and age-based eviction |
+| **Foreground Service** | Persistent notification, optional background restart |
+| **In-app Logs** | Live log viewer with export to `.txt` (share or save to Downloads) |
+| **Proxy Link** | Auto-generate `tg://proxy` link with dd/ee secret |
 
-## Обход блокировки (по умолчанию включено)
+---
 
-Все флаги установлены в ON при первой установке:
+## UI Overview
 
-- **DoH резолвинг** — обход DNS-спуфинга
-- **Auto Fake TLS** — автоматическая маскировка TLS SNI
-- **Параллельный коннект** — параллельные TCP-рукопожатия к нескольким IP
-- **Медиа через CF** — медиа-трафик через Cloudflare
-- **CF Proxy fallback** + **приоритет** — автоматический fallback через CF
+| Home Tab | Logs Tab |
+|---|---|
+| Proxy on/off toggle | Live log stream (2000 line buffer) |
+| Connection stats | Filter by level (DBG / INF / WRN / ERR) |
+| Generated proxy link | Export / Share / Clear |
+| Settings (scrollable): Host, Port, Secret, DC:IP, bypass toggles | File logs with rotation (3 × 2MB files) |
 
-## Логи и диагностика
+> Tap **"Open in Telegram"** → Telegram opens proxy settings directly.
 
-- In-memory буфер 2000 строк (вкладка «Логи»)
-- Файловые логи с ротацией: max 2MB × 3 файла
-- Кнопки **«Поделиться»** (файл `.txt`) и **«Сохранить»** (Downloads)
+---
 
-## Стек
+## Requirements
 
-- Kotlin + Android SDK 34
-- Coroutines (асинхронная обработка)
-- Material Design Components
-- ViewBinding / DataBinding
-- Raw TLS + WebSocket framing (без OkHttp WS для контроля таймаутов)
+- Android **8.0+** (API 26+)
+- Network permission (auto-granted)
+- Notification permission (for foreground service, Android 13+)
 
-## Портировано из
+---
 
-- `proxy/tg_ws_proxy.py` → `TgWsProxy.kt`
-- `proxy/bridge.py` → bridge + fallback logic
-- `proxy/fake_tls.py` → `handleFakeTLS`, `FakeTlsInputStream`
-- `proxy/raw_websocket.py` → `RawWebSocket.kt`
-- `proxy/config.py` → `ProxyConfig.kt`
-- `proxy/stats.py` → `ProxyStats.kt`
-- `proxy/balancer.py` → `Balancer.kt`
-- `proxy/doh_resolver.py` → `DoHResolver.kt`
+## Download
+
+| Variant | File | Size |
+|---|---|---|
+| **Release** (recommended) | `tg-ws-proxy-android.apk` | ~2.4 MB |
+| Debug | `tg-ws-proxy-android-debug.apk` | ~6.8 MB |
+
+Download from [Releases](../../releases) or build from source.
+
+---
+
+## Build from Source
+
+```bash
+# Debug APK
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat --no-daemon assembleDebug
+
+# Release APK (requires release.keystore or use debug signing)
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat --no-daemon assembleRelease
+```
+
+Outputs:
+- Debug: `app/build/outputs/apk/debug/app-debug.apk`
+- Release: `app/build/outputs/apk/release/tg-ws-proxy-android.apk`
+
+---
+
+## Bypass Modes
+
+| Mode | When it triggers |
+|---|---|
+| **Direct WS** | Connects to `kws{dc}.web.telegram.org` via DoH + parallel TCP |
+| **CF Fallback** | Triggered if direct WebSocket fails or DPI blocks it |
+| **TCP Fallback** | Plain TCP to known DC IPs as last resort |
+| **Cold-start fast lane** | Skips direct connect on first run (no CF history yet) for speed |
+
+---
+
+## Roadmap
+
+- [ ] F-Droid publication
+- [ ] Russian UI localisation
+- [ ] WireGuard / OpenVPN tunnel integration
+- [ ] QUIC transport instead of WS
+- [ ] Auto-update domain pool from upstream repo
+
+---
+
+## Known Issues & Fixes
+
+| Issue | Cause | Fix (commit) |
+|---|---|---|
+| App crash on proxy connect | NPE in `ConcurrentHashMap.put(null)` from failed parallel socket | `51b51de` |
+| Service killed / restart loop | `ForegroundServiceDidNotStartInTimeException` on sticky restart | `f9d5910` |
+| Hanging after hours | Global `SSLSocketFactory` poisoning JVM | `5674d6f` |
+| DNS NXDOMAIN flood | System DNS caches negative entries indefinitely | `5674d6f` |
+| Socket FD exhaustion | Parallel connect leaked loser's sockets | `5674d6f` |
+| Telegram handshake timeout | `soTimeout=10s` too short for MTProto handshake silence | `5674d6f` |
+
+Full changelog: [CHANGELOG.md](CHANGELOG.md)
+
+---
+
+## Architecture (Port Mapping)
+
+| Original Python | Kotlin port |
+|---|---|
+| `proxy/tg_ws_proxy.py` | `TgWsProxy.kt` |
+| `proxy/bridge.py` | Bridge + fallback logic in `TgWsProxy.kt` |
+| `proxy/fake_tls.py` | `handleFakeTLS`, `FakeTlsInputStream` |
+| `proxy/raw_websocket.py` | `RawWebSocket.kt` |
+| `proxy/config.py` | `ProxyConfig.kt` |
+| `proxy/stats.py` | `ProxyStats.kt` |
+| `proxy/balancer.py` | `Balancer.kt` |
+| `proxy/doh_resolver.py` | `DoHResolver.kt` |
+| `proxy/utils.py` | `MtProtoConstants.kt` |
+
+---
+
+## Contributing
+
+1. Fork this repository
+2. Create a feature branch (`git checkout -b feat/my-feature`)
+3. Commit changes (`git commit -am 'feat: add new feature'`)
+4. Push to GitHub (`git push origin feat/my-feature`)
+5. Open a Pull Request
+
+### For AI Agents / Automated Contributions
+
+See [`AGENTS.md`](AGENTS.md) for build instructions, naming conventions, and critical rules about Gradle daemon and APK filenames.
+
+---
+
+## License
+
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE).
+
+Based on [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) by [Flowseal](https://github.com/Flowseal), also under MIT License.
+
+---
+
+## Acknowledgements
+
+- Original idea and protocol design: **[Flowseal](https://github.com/Flowseal)** and contributors to [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy)
+- MTProto protocol: Telegram Messenger LLP
+- CF proxy domain pool: community-curated, refreshed from upstream repo
+
+---
+
+> ⚠️ **Disclaimer**: This tool is for educational purposes and personal use in regions with network censorship. Users are responsible for compliance with local laws and Telegram's Terms of Service.
