@@ -34,12 +34,11 @@ $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat as
 cmd /c "set JAVA_HOME=C:\Program Files\Android\Android Studio\jbr && gradlew.bat --no-daemon assembleDebug"
 ```
 
-### 2. Use Pre-made .bat Scripts
+### 2. Build via Gradle (not .bat scripts)
 
-Project contains ready-made scripts that already use `--no-daemon`:
-- **Debug**: `build_debug.bat`
-- **Release**: `build_release.bat`
-- **Agent-safe debug**: `agent_build_debug.bat` (uses `cmd /c`, guaranteed non-interactive)
+Agents MUST NOT rely on `.bat` build scripts — use Gradle wrapper directly:
+- **Debug**: `$env:JAVA_HOME = '...'; .\gradlew.bat --no-daemon assembleDebug`
+- **Release**: `$env:JAVA_HOME = '...'; .\gradlew.bat --no-daemon assembleRelease`
 
 ### 3. Avoid Interactive Shell Commands
 
