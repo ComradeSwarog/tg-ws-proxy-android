@@ -140,6 +140,7 @@ Outputs:
 |---|---|---|
 | App crash on proxy connect | NPE in `ConcurrentHashMap.put(null)` from failed parallel socket | `51b51de` |
 | Service killed / restart loop | `ForegroundServiceDidNotStartInTimeException` on sticky restart | `f9d5910` |
+| Proxy hanging after hours | `CF_SUCCESS_THRESHOLD=1` permanently blocks direct WS after 1 CF success; dead sockets leaked from pool; `soTimeout=0` causes infinite read hangs | Remove permanent CF lock-in (v1.6.0-beta) |
 | Samsung/Android 16 freeze | Device Care throttles foreground service network I/O after ~30 min | WakeLock refresh + `dataSync` foreground service type |
 | Hanging after hours | Global `SSLSocketFactory` poisoning JVM | `5674d6f` |
 | DNS NXDOMAIN flood | System DNS caches negative entries indefinitely | `5674d6f` |

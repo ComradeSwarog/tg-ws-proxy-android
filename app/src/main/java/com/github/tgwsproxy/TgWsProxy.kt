@@ -37,7 +37,7 @@ class TgWsProxy(
     private const val WS_POOL_MAX_AGE = 120_000L
     private const val KEEPALIVE_INTERVAL_MS = 25_000L
     private const val KEEPALIVE_DEADLINE_MS = 60_000L
-    private const val CF_SUCCESS_THRESHOLD = 1  // after 1 successful CF, skip direct for this DC
+    private const val CF_PROVEN_MIN = 1  // minimum CF successes before logging 'proven'
     }
 
     private var serverSocket: ServerSocket? = null
@@ -85,6 +85,7 @@ class TgWsProxy(
         serverJob = scope.launch { acceptLoop() }
         scope.launch { wsPool.warmup(config.dcRedirects) }
         scope.launch { prewarmCfPool() }
+        scope.launch { periodicCleanupLoop() }
         onStatusChange("running")
         AppLogger.i(TAG, "Proxy started on ${config.host}:${config.port}")
     }
@@ -257,18 +258,38 @@ class TgWsProxy(
         AppLogger.d(TAG, "CF prewarm failed for DC$dc")
     }
 
+    /**
+     * Periodic cleanup: reset stale dcFailUntil entries and decay cfSuccessCount.
+     * This prevents CF successes from permanently blocking direct connection attempts
+     * when the network condition later improves.
+     */
+    private fun periodicCleanupLoop() {
+        scope.launch {
+            while (isActive()) {
+                delay(60_000L)
+                val now = System.currentTimeMillis()
+                // 1. Remove expired direct-connection cooldowns
+                dcFailUntil.entries.removeIf { it.value < now }
+                // 2. Decay CF success counters every 5 minutes so a single
+                //    transient CF success doesn't bias the proxy forever.
+                val lastDecay = cleanupLastDecay.getAndSet(now)
+                if (now - lastDecay >= 300_000L) {
+                    val iter = cfSuccessCount.iterator()
+                    while (iter.hasNext()) {
+                        val entry = iter.next()
+                        val newVal = entry.value / 2
+                        if (newVal <= 0) iter.remove() else entry.setValue(newVal)
+                    }
+                }
+                AppLogger.d(TAG, "Periodic cleanup done: dcFail=${dcFailUntil.size} cfDecay=${cfSuccessCount.size}")
+            }
+        }
+    }
+
+    private val cleanupLastDecay = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+
     private fun connectRawWsEnhanced(targetIp: String, domains: List<String>, timeout: Long, dc: Int, isMedia: Boolean, label: String, forFallback: Boolean = false): RawWebSocket? {
         val dcKey = "$dc${if (isMedia) "m" else ""}"
-        // Fast path 1: if DC is known-dead (cfSuccessCount >= threshold), skip direct entirely
-        if (cfSuccessCount[dcKey]?.let { it >= CF_SUCCESS_THRESHOLD } == true) {
-            AppLogger.d(TAG, "[$label] DC$dc known blocked, skipping direct WS connect")
-            return null
-        }
-        // Fast path 2: cold-start -- no CF success yet anywhere, direct is almost certainly blocked on this network
-        if (cfSuccessCount.isEmpty()) {
-            AppLogger.d(TAG, "[$label] DC$dc cold-start, skipping direct WS connect (no CF history)")
-            return null
-        }
         // Use the passed timeout (already adjusted by caller based on failUntil)
         val tmo = timeout.coerceIn(2000, 8000)
         // 1. Standard connect with DoH + parallel IPs (fast single attempt)
@@ -334,19 +355,9 @@ class TgWsProxy(
         }
 
         private fun pingPongCheck(ws: RawWebSocket): Boolean {
-            try {
-                ws.ping(byteArrayOf(0x01, 0x02, 0x03, 0x04))
-                val start = System.currentTimeMillis()
-                while (System.currentTimeMillis() - start < 3000) {
-                    val frame = ws.recv() ?: return false
-                    // PONG received
-                    continue
-                }
-                // If we got here without Exception and within 3s, assume alive
-                return true
-            } catch (_: Exception) {
-                return false
-            }
+            // Simple check: not closed and not idle for too long.
+            // Full blocking ping-pong is unreliable because recv() handles PONG internally.
+            return !ws.isClosed
         }
 
         private fun scheduleRefill(key: Pair<Int, Boolean>, targetIp: String, domains: List<String>) {
@@ -618,13 +629,7 @@ class TgWsProxy(
         } else {
             // Parallel fallback: try CF and TCP at the same time, use first success
             // Short-cut: if CF already proven to work for this DC, skip TCP entirely
-            val dcKey = "$dc${if (isMedia) "m" else ""}"
-            val cfProven = (cfSuccessCount[dcKey] ?: 0) >= CF_SUCCESS_THRESHOLD
-            if (cfProven) {
-                AppLogger.i(TAG, "[$label] DC$dc CF proven, skipping TCP fallback")
-                if (cfproxyFallback(cltInput, cltOutput, relayInit, label, ctx, dc, isMedia, splitter)) return
-                // If CF unexpectedly fails now, still try TCP as last resort
-            }
+            // CF is now always tried alongside direct; we no longer skip direct permanently
             val cfDone = AtomicBoolean(false)
             val tcpDone = AtomicBoolean(false)
             val winner = AtomicBoolean(false)
@@ -638,7 +643,6 @@ class TgWsProxy(
                 }
             }
             val tcpJob = scope.launch(Dispatchers.IO) {
-                if (cfProven) return@launch
                 delay(200)
                 if (winner.get()) return@launch
                 if (tcpFallback(cltInput, cltOutput, fallbackDst!!, 443, relayInit, ctx)) {
@@ -665,7 +669,7 @@ class TgWsProxy(
                 if (ws != null) {
                     balancer.updateDomainForDc(dc, baseDomain)
                     cfSuccessCount[dcKey] = (cfSuccessCount[dcKey] ?: 0) + 1
-                    AppLogger.i(TAG, "[$label] DC$dc CF success #${cfSuccessCount[dcKey]} via $baseDomain, will skip direct after threshold")
+                    AppLogger.i(TAG, "[$label] DC$dc CF success #${cfSuccessCount[dcKey]} via $baseDomain")
                     stats.connectionsCfproxy.incrementAndGet()
                     ws.send(relayInit)
                     bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)

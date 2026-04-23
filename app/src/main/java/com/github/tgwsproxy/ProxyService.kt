@@ -151,7 +151,7 @@ class ProxyService : Service() {
     }
 
     private fun scheduleRestart() {
-        Log.d(TAG, "Scheduling service restart in 1 second")
+        Log.d(TAG, "Scheduling service restart in 3 seconds")
         try {
             val restartIntent = Intent(this, ProxyService::class.java).apply {
                 action = ACTION_START
@@ -163,11 +163,22 @@ class ProxyService : Service() {
                 PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
             )
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                SystemClock.elapsedRealtime() + 1000,
-                pendingIntent
-            )
+
+            // Primary: exact alarm with small window (3s) so cleanup finishes before restart
+            try {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + 3000,
+                    pendingIntent
+                )
+            } catch (_: Exception) {
+                // Fallback for devices that restrict exact alarms
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + 5000,
+                    pendingIntent
+                )
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to schedule restart: ${e.message}")
         }

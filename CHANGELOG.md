@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0-beta] - 2026-04-24
+
+### Fixed (Stability & Hanging)
+- **Removed permanent CF-fallback lock-in**: `CF_SUCCESS_THRESHOLD` (set to 1) permanently blocked direct WebSocket connections after a single successful Cloudflare fallback, causing the proxy to rely exclusively on CF — eventually exhausting domains or hitting rate-limits. Now direct attempts are always permitted (subject only to the 60-second cooldown on hard failures). (`TgWsProxy.kt`)
+- **Added periodic CF-success decay**: `cfSuccessCount` is halved every 5 minutes by a background cleanup coroutine. This prevents transient CF successes from permanently biasing the proxy away from direct paths when the network later improves. (`TgWsProxy.kt`)
+- **Fixed broken WebSocket pool health check**: `pingPongCheck()` sent a PING and then blocked for up to 3 seconds calling `recv()`, but `recv()` handles PONG internally without returning it — the check never completed correctly, marking valid connections as dead. Replaced with a simple `!ws.isClosed` check for speed and correctness. (`TgWsProxy.kt`)
+- **WebSocket read timeout**: Changed `sslSocket.soTimeout` from 0 (infinite) to 70 seconds. This prevents threads from silently hanging forever during "silent" network drops (typical on mobile networks / Doze), which caused threads to accumulate and eventually led to OOM or service death. (`RawWebSocket.kt`)
+- **Service restart reliability**: `scheduleRestart()` now includes a fallback from `setExactAndAllowWhileIdle` to `setAndAllowWhileIdle` for devices that restrict exact alarms. Delay increased from 1s to 3–5s to allow cleanup to complete before restart. (`ProxyService.kt`)
+
+### Documentation
+- Updated `README.md` Known Issues table with new entry for "Proxy hanging after hours".
+- Updated `help_en.html` and `help_ru.html` with v1.6.0-beta release notes.
+
+### Internal
+- Bumped versionCode: 6 → 7, versionName: "1.5.0" → "1.6.0-beta".
+
 ## [1.1.1] - 2026-04-22
 
 ### Fixed (Critical Stability)

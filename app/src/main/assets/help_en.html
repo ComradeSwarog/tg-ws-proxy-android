@@ -17,6 +17,14 @@ h2{color:#1565C0;} h3{color:#1976D2; margin-top:24px;}
 <li>Copy the connection link or tap <b>Open in Telegram</b> to paste it into Telegram proxy settings.</li>
 </ol>
 
+<h3>What’s New in v1.6.0 (Beta)</h3>
+<ul>
+<li><b>Fixed proxy hanging after hours</b> — removed permanent CF-fallback lock-in that blocked direct WebSocket reconnections. CF success is now decayed every 5 minutes so direct paths are retried after transient blocks.</li>
+<li><b>Improved WebSocket pool health checks</b> — replaced unreliable blocking PING check with simple isClosed check, preventing dead sockets from being handed back to clients.</li>
+<li><b>WebSocket read timeout</b> — set a 70-second read timeout on underlying TLS socket so threads are freed instead of leaking on silent network drops.</li>
+<li><b>Service restart robustness</b> — restart alarm now has a reliable fallback for devices that restrict exact alarms, preventing stale proxy state after a crash or Doze.</li>
+</ul>
+
 <h3>What’s New in v1.5.0</h3>
 <ul>
 <li><b>Auto-generated Secret</b> — a new 32-hex secret is created on first launch. Tap the refresh icon next to the Secret field to regenerate anytime.</li>
