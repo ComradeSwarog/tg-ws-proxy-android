@@ -30,8 +30,12 @@ class ProxyService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val RESTART_REQUEST_CODE = 1001
 
+        private const val WAKELOCK_TIMEOUT_MS = 30L * 60 * 1000
+        private const val WAKELOCK_REFRESH_MS = 25L * 60 * 1000
+
         const val ACTION_START = "com.github.tgwsproxy.ACTION_START"
         const val ACTION_STOP = "com.github.tgwsproxy.ACTION_STOP"
+        const val EXTRA_CONFIG = "com.github.tgwsproxy.EXTRA_CONFIG"
 
         var isProxyRunning = false
             private set
@@ -102,7 +106,8 @@ class ProxyService : Service() {
                 return START_NOT_STICKY
             }
             else -> {
-                // Null intent (sticky restart) or unknown action: restart proxy if not running
+                // Null intent handled by START_REDELIVER_INTENT (should not happen)
+                // or unknown action: restart proxy if not running
                 if (!isProxyRunning) {
                     val cfg = config ?: loadConfig()
                     config = cfg
@@ -112,7 +117,7 @@ class ProxyService : Service() {
         }
         val workInBackground = PreferenceManager.getDefaultSharedPreferences(this)
             .getBoolean("work_in_background", false)
-        return if (workInBackground) START_STICKY else START_NOT_STICKY
+        return if (workInBackground) START_REDELIVER_INTENT else START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -200,6 +205,20 @@ class ProxyService : Service() {
 
         // Start periodic CF domain refresh
         startDomainRefresh(cfg)
+        // Start WakeLock refresh loop (25 min) to prevent Samsung expiring wakelocks
+        startWakeLockRefreshLoop()
+    }
+
+    private var wakeLockRefreshJob: Job? = null
+
+    private fun startWakeLockRefreshLoop() {
+        wakeLockRefreshJob?.cancel()
+        wakeLockRefreshJob = serviceScope.launch {
+            while (isActive) {
+                delay(WAKELOCK_REFRESH_MS)
+                refreshWakeLock()
+            }
+        }
     }
 
     private fun startDomainRefresh(cfg: ProxyConfig) {
@@ -282,7 +301,23 @@ class ProxyService : Service() {
         }
     }
 
+    private fun refreshWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TgWsProxy::ProxyWakeLock")
+            wakeLock?.acquire(WAKELOCK_TIMEOUT_MS)
+            AppLogger.d(TAG, "WakeLock refreshed")
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Failed to refresh WakeLock: ${e.message}")
+        }
+    }
+
     private fun releaseWakeLocks() {
+        wakeLockRefreshJob?.cancel()
+        wakeLockRefreshJob = null
         try {
             if (wakeLock?.isHeld == true) wakeLock?.release()
             AppLogger.d(TAG, "WakeLock released")
