@@ -37,7 +37,8 @@ class TgWsProxy(
     private const val WS_POOL_MAX_AGE = 120_000L
     private const val KEEPALIVE_INTERVAL_MS = 25_000L
     private const val KEEPALIVE_DEADLINE_MS = 60_000L
-    private const val CF_PROVEN_MIN = 1  // minimum CF successes before logging 'proven'
+    private const val CF_PROVEN_MIN = 2       // ≥2 CF successes → treat DC as CF-proven
+    private const val CF_PROVEN_TTL_MS = 300_000L  // skip direct for 5 min after proven
     }
 
     private var serverSocket: ServerSocket? = null
@@ -46,6 +47,7 @@ class TgWsProxy(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val wsBlacklist = mutableSetOf<String>()
     private val dcFailUntil = ConcurrentHashMap<String, Long>()
+    private val cfProvenUntil = ConcurrentHashMap<String, Long>() // timestamp until which CF is proven for this DC
     private val cfSuccessCount = ConcurrentHashMap<String, Int>()
     private val balancer: Balancer = sharedBalancer ?: Balancer()
     private val wsPool = WsPool()
@@ -64,6 +66,7 @@ class TgWsProxy(
         stats.reset()
         wsBlacklist.clear()
         dcFailUntil.clear()
+        cfProvenUntil.clear()
         cfSuccessCount.clear()
         wsPool.reset()
         // Pass DPI-bypass config to RawWebSocket static fields
@@ -176,7 +179,7 @@ class TgWsProxy(
             val ctx = buildCryptoCtx(clientDecPrekeyIv, secret, relayInit)
             val dcKey = "$dc${if (isMedia) "m" else ""}"
 
-            if (dc !in config.dcRedirects || dcKey in wsBlacklist) {
+            if (dc !in config.dcRedirects) {
                 val splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { null }
                 doFallback(cltInput, cltOutput, relayInit, label, dc, isMedia, ctx, splitter)
                 return
@@ -184,33 +187,37 @@ class TgWsProxy(
 
             val now = System.currentTimeMillis()
             val failUntil = dcFailUntil[dcKey] ?: 0L
+            val provenUntil = cfProvenUntil[dcKey] ?: 0L
             val wsTimeout = if (now < failUntil) WS_FAIL_TIMEOUT else config.handshakeTimeoutMs
             val domains = wsDomains(dc, isMedia)
             val target = config.dcRedirects[dc]!!
 
-            var ws = wsPool.get(dc, isMedia, target, domains)
-            if (ws != null) {
-                AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> pool hit via $target")
-            } else {
-                AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> pool miss, connecting to $target domains=$domains")
-                ws = connectRawWsEnhanced(target, domains, wsTimeout, dc, isMedia, label, forFallback = false)
-            }
-
-            if (ws == null) {
+            var ws: RawWebSocket? = null
+            // Fast path: if CF proven active, skip direct attempts to avoid
+            // the ~20s Telegram timeout while direct WebSocket is blocked.
+            if (now >= provenUntil) {
+                ws = wsPool.get(dc, isMedia, target, domains)
+                if (ws != null) {
+                    AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> pool hit via $target")
+                } else {
+                    AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> pool miss, connecting to $target domains=$domains")
+                    ws = connectRawWsEnhanced(target, domains, wsTimeout, dc, isMedia, label, forFallback = false)
+                }
+                if (ws != null) {
+                    dcFailUntil.remove(dcKey)
+                    stats.connectionsWs.incrementAndGet()
+                    AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> WS connected")
+                    val splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { AppLogger.w(TAG, "[$label] MsgSplitter init failed: ${e.message}"); null }
+                    ws.send(relayInit)
+                    bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
+                    return
+                }
+                // Direct failed — mark cooldown and fall through to fallback
                 dcFailUntil[dcKey] = now + DC_FAIL_COOLDOWN
                 AppLogger.w(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> WS FAILED, going to fallback")
-                val splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { null }
-                doFallback(cltInput, cltOutput, relayInit, label, dc, isMedia, ctx, splitter)
-                return
+            } else {
+                AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> CF proven active, skipping direct")
             }
-
-            dcFailUntil.remove(dcKey)
-            stats.connectionsWs.incrementAndGet()
-            AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> WS connected")
-
-            val splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { AppLogger.w(TAG, "[$label] MsgSplitter init failed: ${e.message}"); null }
-            ws.send(relayInit)
-            bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
         } catch (e: CancellationException) {
             AppLogger.d(TAG, "[$label] handleClient cancelled (scope shutting down)")
         } catch (e: Exception) {
@@ -268,8 +275,9 @@ class TgWsProxy(
             while (isActive()) {
                 delay(60_000L)
                 val now = System.currentTimeMillis()
-                // 1. Remove expired direct-connection cooldowns
+                // 1. Remove expired direct-connection cooldowns and CF-proven windows
                 dcFailUntil.entries.removeIf { it.value < now }
+                cfProvenUntil.entries.removeIf { it.value < now }
                 // 2. Decay CF success counters every 5 minutes so a single
                 //    transient CF success doesn't bias the proxy forever.
                 val lastDecay = cleanupLastDecay.getAndSet(now)
@@ -281,7 +289,7 @@ class TgWsProxy(
                         if (newVal <= 0) iter.remove() else entry.setValue(newVal)
                     }
                 }
-                AppLogger.d(TAG, "Periodic cleanup done: dcFail=${dcFailUntil.size} cfDecay=${cfSuccessCount.size}")
+                AppLogger.d(TAG, "Periodic cleanup done: dcFail=${dcFailUntil.size} cfProven=${cfProvenUntil.size} cfDecay=${cfSuccessCount.size}")
             }
         }
     }
@@ -669,7 +677,12 @@ class TgWsProxy(
                 if (ws != null) {
                     balancer.updateDomainForDc(dc, baseDomain)
                     cfSuccessCount[dcKey] = (cfSuccessCount[dcKey] ?: 0) + 1
-                    AppLogger.i(TAG, "[$label] DC$dc CF success #${cfSuccessCount[dcKey]} via $baseDomain")
+                    val count = cfSuccessCount[dcKey] ?: 0
+                    // Activate CF-proven mode once enough successes accumulate
+                    if (count >= CF_PROVEN_MIN) {
+                        cfProvenUntil[dcKey] = System.currentTimeMillis() + CF_PROVEN_TTL_MS
+                    }
+                    AppLogger.i(TAG, "[$label] DC$dc CF success #$count via $baseDomain")
                     stats.connectionsCfproxy.incrementAndGet()
                     ws.send(relayInit)
                     bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
