@@ -1,0 +1,57 @@
+<html><head><meta charset="UTF-8"><style>
+body{font-family:sans-serif; padding:16px; line-height:1.6; color:#333;}
+h2{color:#1565C0;} h3{color:#1976D2; margin-top:24px;}
+.note{background:#E3F2FD; padding:10px; border-radius:6px;}
+.warning{background:#FFF3E0; padding:10px; border-radius:6px;}
+</style></head><body>
+
+<h2>TG WS Proxy — Help</h2>
+<p>TG WS Proxy is an MTProto WebSocket bridge for Android with DPI bypass (DoH, parallel connect, CF fallback).</p>
+
+<h3>Quick Start</h3>
+<ol>
+<li>Configure your <b>Host</b>, <b>Port</b>, <b>Secret</b> and <b>DC:IP</b> mappings (default values work for most users).</li>
+<li>In the <b>Bypass Settings</b> card enable the features you need (see below).</li>
+<li>Tap <b>Save Settings</b> — all toggles and values are persisted.</li>
+<li>Tap <b>Start</b> to run the proxy.</li>
+<li>Copy the connection link or tap <b>Open in Telegram</b> to paste it into Telegram proxy settings.</li>
+</ol>
+
+<h3>What’s New in v1.3.0–v1.4.0</h3>
+<ul>
+<li><b>Localization</b> — Russian & English. App auto-detects system language; you can also switch manually in "Bypass Settings".</li>
+<li><b>In-app Help</b> — this screen, opened via the <b>?</b> button in the toolbar.</li>
+<li><b>Check for Updates</b> — button with refresh icon in the toolbar; auto-check on startup can be enabled/disabled in "Bypass Settings".</li>
+<li><b>WS Frame Padding / DoH Rotation</b> — DPI obfuscation switches in "Bypass Settings".</li>
+</ul>
+
+<h3>Settings</h3>
+<ul>
+<li><b>Host / Port</b> — local listen address (default 127.0.0.1:1443).</li>
+<li><b>Secret</b> — 32 hex characters. Tap <b>Generate secret</b> to create one.</li>
+<li><b>DC:IP</b> — mapping of Telegram DC numbers to direct IPs (one per line).</li>
+<li><b>Fake TLS domain</b> — domain for SNI obfuscation (obfs2), e.g. <code>cloudflare.com</code>.</li>
+<li><b>Pool size</b> — number of pre-warmed WebSocket connections.</li>
+</ul>
+
+<h3>Bypass Settings</h3>
+<ul>
+<li><b>DoH resolving</b> — resolves Telegram IPs via DNS-over-HTTPS instead of plain DNS.</li>
+<li><b>Auto Fake TLS</b> — automatically enables Fake TLS if direct IP connections are blocked.</li>
+<li><b>Parallel connect</b> — connects to multiple resolved IPs simultaneously for faster fallback.</li>
+<li><b>Media via CF</b> — routes media downloads through Cloudflare to save direct bandwidth.</li>
+<li><b>CF Proxy fallback</b> — uses Cloudflare Worker proxy when direct connections fail.</li>
+<li><b>CF Proxy priority</b> — tries Cloudflare before direct connections.</li>
+<li><b>WS frame padding</b> — adds self-describing random padding to WebSocket frames (disabled by default).</li>
+<li><b>Rotate DoH providers</b> — cyclically switches between Cloudflare, Google and Quad9 DoH endpoints.</li>
+<li><b>Work in background</b> — keeps the proxy running when the app UI is closed.</li>
+<li><b>Language</b> — Auto (system default), Russian or English. Switch applies after restart.</li>
+<li><b>Auto check for updates</b> — checks GitHub Releases on startup. Disable here if you prefer manual checks only.</li>
+</ul>
+
+<h3>Logs</h3>
+<p>Open the <b>Logs</b> tab to view real-time proxy logs. You can refresh, clear, share or save them to the Downloads folder. Log level (Debug / Info / Warn) is controlled by the chips above the log window.</p>
+
+<p class="note"><b>Tip:</b> If something doesn’t work, switch log level to <b>Debug</b>, reproduce the issue and share the logs.</p>
+
+</body></html>

@@ -24,6 +24,44 @@
         android:orientation="vertical"
         android:padding="16dp">
 
+        <!-- Header row: help + update + language -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end|center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/helpButton"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="@string/btn_help"
+                android:textAllCaps="false"
+                android:textSize="13sp"
+                app:icon="@drawable/ic_help"
+                app:iconSize="18dp"
+                app:iconPadding="4dp" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/checkUpdateButton"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="@string/btn_check_update"
+                android:textAllCaps="false"
+                android:textSize="13sp"
+                app:icon="@drawable/ic_refresh"
+                app:iconSize="18dp"
+                app:iconPadding="4dp" />
+        </LinearLayout>
+
         <!-- Status -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -37,7 +75,7 @@
                 android:layout_width="32dp"
                 android:layout_height="32dp"
                 android:src="@drawable/ic_proxy_off"
-                android:contentDescription="status" />
+                android:contentDescription="@string/proxy_status" />
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -51,7 +89,6 @@
                     android:id="@+id/statusText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Остановлено"
                     android:textSize="16sp"
                     android:textStyle="bold" />
 
@@ -65,23 +102,25 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- Language selector REMOVED from here; moved to Enhanced Settings card -->
+
         <!-- Toggle button -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/toggleButton"
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:text="Запустить"
+            android:text="@string/btn_enable"
             android:textAllCaps="false"
             android:textSize="16sp"
             app:cornerRadius="8dp"
             android:layout_marginBottom="12dp" />
 
-        <!-- Telegram link button immediately after toggle -->
+        <!-- Telegram link button -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/openTelegramButton"
             android:layout_width="match_parent"
             android:layout_height="64dp"
-            android:text="Открыть в Telegram"
+            android:text="@string/open_telegram"
             android:textAllCaps="false"
             android:textSize="16sp"
             app:cornerRadius="8dp"
@@ -101,7 +140,7 @@
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Host (127.0.0.1)"
+                    android:hint="@string/hint_host"
                     style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
                     android:layout_marginBottom="8dp">
 
@@ -110,15 +149,14 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="textUri"
-                        android:singleLine="true"
-                        android:text="127.0.0.1" />
+                        android:singleLine="true" />
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <!-- Port -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Port"
+                    android:hint="@string/hint_port"
                     style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
                     android:layout_marginBottom="8dp">
 
@@ -127,15 +165,14 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="number"
-                        android:singleLine="true"
-                        android:text="1443" />
+                        android:singleLine="true" />
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <!-- Secret -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Secret (32 hex)"
+                    android:hint="@string/hint_secret"
                     style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
                     android:layout_marginBottom="4dp">
 
@@ -150,18 +187,18 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/regenSecretButton"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="40dp"
-                    android:text="Сгенерировать секрет"
+                    android:text="@string/regen_secret"
                     android:textAllCaps="false"
-                    android:layout_marginBottom="8dp"
-                    style="@style/Widget.MaterialComponents.Button.TextButton" />
+                    android:layout_marginBottom="8dp" />
 
                 <!-- DC IPs -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="DC:IP (по строке)"
+                    android:hint="@string/hint_dc_ip"
                     style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
                     android:layout_marginBottom="8dp">
 
@@ -172,15 +209,14 @@
                         android:inputType="textMultiLine"
                         android:minLines="2"
                         android:maxLines="6"
-                        android:fontFamily="monospace"
-                        android:text="2:149.154.167.220&#10;4:149.154.167.220" />
+                        android:fontFamily="monospace" />
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <!-- Fake TLS domain -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Fake TLS домен (obfs2)"
+                    android:hint="@string/hint_fake_tls"
                     style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
                     android:layout_marginBottom="4dp">
 
@@ -196,7 +232,7 @@
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Размер WS пула"
+                    android:hint="@string/hint_pool_size"
                     style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
                     android:layout_marginBottom="8dp">
 
@@ -205,8 +241,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="number"
-                        android:singleLine="true"
-                        android:text="4" />
+                        android:singleLine="true" />
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <!-- Enhanced settings card -->
@@ -228,16 +263,45 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Расширенные настройки обхода"
+                            android:text="@string/card_enhanced_settings"
                             android:textSize="14sp"
                             android:textStyle="bold"
-                            android:layout_marginBottom="8dp" />
+                            android:layout_marginBottom="4dp" />
+
+                        <!-- Language setting -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="8dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/settings_language"
+                                android:textSize="14sp" />
+
+                            <Spinner
+                                android:id="@+id/languageSpinner"
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content" />
+                        </LinearLayout>
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/checkUpdatesSwitch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/switch_auto_check_updates"
+                            android:checked="true"
+                            android:layout_marginBottom="4dp" />
 
                         <com.google.android.material.switchmaterial.SwitchMaterial
                             android:id="@+id/useDoHSwitch"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="DoH резолвинг"
+                            android:text="@string/switch_doh"
                             android:checked="true"
                             android:layout_marginBottom="4dp" />
 
@@ -245,7 +309,7 @@
                             android:id="@+id/autoFakeTlsSwitch"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Auto Fake TLS (если прямой IP заблокирован)"
+                            android:text="@string/switch_auto_fake_tls"
                             android:checked="true"
                             android:layout_marginBottom="4dp" />
 
@@ -253,7 +317,7 @@
                             android:id="@+id/parallelConnectSwitch"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Параллельный коннект к нескольким IP"
+                            android:text="@string/switch_parallel"
                             android:checked="true"
                             android:layout_marginBottom="4dp" />
 
@@ -261,7 +325,7 @@
                             android:id="@+id/mediaViaCfSwitch"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Медиа через CF (экономия трафика)"
+                            android:text="@string/switch_media_cf"
                             android:checked="false"
                             android:layout_marginBottom="4dp" />
 
@@ -269,7 +333,7 @@
                             android:id="@+id/cfproxySwitch"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="CF Proxy fallback"
+                            android:text="@string/switch_cf_proxy"
                             android:checked="true"
                             android:layout_marginBottom="4dp" />
 
@@ -277,7 +341,23 @@
                             android:id="@+id/cfproxyPrioritySwitch"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="CF Proxy приоритет"
+                            android:text="@string/switch_cf_priority"
+                            android:checked="true"
+                            android:layout_marginBottom="4dp" />
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/wsPaddingSwitch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/switch_ws_padding"
+                            android:checked="false"
+                            android:layout_marginBottom="4dp" />
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/dohRotationSwitch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/switch_doh_rotation"
                             android:checked="true"
                             android:layout_marginBottom="4dp" />
 
@@ -285,7 +365,7 @@
                             android:id="@+id/workInBackgroundSwitch"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Работать в фоне"
+                            android:text="@string/switch_background"
                             android:checked="false" />
 
                     </LinearLayout>
@@ -296,7 +376,7 @@
                     android:id="@+id/saveButton"
                     android:layout_width="match_parent"
                     android:layout_height="48dp"
-                    android:text="Сохранить настройки"
+                    android:text="@string/btn_save"
                     android:textAllCaps="false"
                     android:layout_marginBottom="12dp"
                     app:cornerRadius="8dp" />
@@ -321,7 +401,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Ссылка для подключения"
+                            android:text="@string/card_link"
                             android:textSize="14sp"
                             android:textStyle="bold"
                             android:layout_marginBottom="6dp" />
@@ -342,13 +422,13 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/copyLinkButton"
+                                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                                 android:layout_width="match_parent"
-                                android:layout_height="64dp"
-                                android:text="Копировать"
+                                android:layout_height="48dp"
+                                android:text="@string/btn_copy"
                                 android:textAllCaps="false"
                                 android:textSize="16sp"
-                                app:cornerRadius="8dp"
-                                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                                app:cornerRadius="8dp" />
                         </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -374,7 +454,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Статистика"
+                            android:text="@string/card_stats"
                             android:textSize="14sp"
                             android:textStyle="bold"
                             android:layout_marginBottom="6dp" />
@@ -417,39 +497,39 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnRefreshLogs"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="0dp"
                 android:layout_height="40dp"
                 android:layout_weight="1"
-                android:text="Обновить"
-                android:textAllCaps="false"
-                style="@style/Widget.MaterialComponents.Button.TextButton" />
+                android:text="@string/btn_refresh"
+                android:textAllCaps="false" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnClearLogs"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="0dp"
                 android:layout_height="40dp"
                 android:layout_weight="1"
-                android:text="Очистить"
-                android:textAllCaps="false"
-                style="@style/Widget.MaterialComponents.Button.TextButton" />
+                android:text="@string/btn_clear"
+                android:textAllCaps="false" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnShareLogs"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="0dp"
                 android:layout_height="40dp"
                 android:layout_weight="1"
-                android:text="Поделиться"
-                android:textAllCaps="false"
-                style="@style/Widget.MaterialComponents.Button.TextButton"/>
+                android:text="@string/btn_share"
+                android:textAllCaps="false" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSaveLogs"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="0dp"
                 android:layout_height="40dp"
                 android:layout_weight="1"
-                android:text="Сохранить"
-                android:textAllCaps="false"
-                style="@style/Widget.MaterialComponents.Button.TextButton"/>
+                android:text="@string/btn_save"
+                android:textAllCaps="false" />
         </LinearLayout>
 
         <com.google.android.material.chip.ChipGroup
@@ -465,21 +545,21 @@
                 style="@style/Widget.MaterialComponents.Chip.Choice"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Debug" />
+                android:text="@string/log_level_debug" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipInfo"
                 style="@style/Widget.MaterialComponents.Chip.Choice"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Info" />
+                android:text="@string/log_level_info" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipWarn"
                 style="@style/Widget.MaterialComponents.Chip.Choice"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Warn" />
+                android:text="@string/log_level_warn" />
         </com.google.android.material.chip.ChipGroup>
 
         <ScrollView

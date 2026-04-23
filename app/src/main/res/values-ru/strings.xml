@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TG WS Proxy</string>
+
+    <!-- Main screen -->
+    <string name="tab_proxy">Прокси</string>
+    <string name="tab_logs">Логи</string>
+    <string name="proxy_running">Прокси запущен</string>
+    <string name="proxy_stopped">Прокси остановлен</string>
+    <string name="proxy_status">Состояние прокси</string>
+    <string name="btn_enable">Запустить</string>
+    <string name="btn_disable">Выключить</string>
+
+    <string name="link_copied">Ссылка скопирована</string>
+    <string name="open_telegram">Открыть в Telegram</string>
+    <string name="regen_secret">Сгенерировать секрет</string>
+    <string name="hint_host">Хост</string>
+    <string name="hint_port">Порт</string>
+    <string name="hint_secret">Секрет (32 hex)</string>
+    <string name="hint_dc_ip">DC:IP (по строке)</string>
+    <string name="hint_fake_tls">Fake TLS домен (obfs2)</string>
+    <string name="hint_pool_size">Размер WS пула</string>
+    <string name="card_enhanced_settings">Настройки обхода</string>
+    <string name="switch_doh">DoH резолвинг</string>
+    <string name="switch_auto_fake_tls">Авто Fake TLS (если прямой IP заблокирован)</string>
+    <string name="switch_parallel">Параллельный коннект к нескольким IP</string>
+    <string name="switch_media_cf">Медиа через CF (экономия трафика)</string>
+    <string name="switch_cf_proxy">CF Proxy fallback</string>
+    <string name="switch_cf_priority">CF Proxy приоритет</string>
+    <string name="switch_background">Работать в фоне</string>
+    <string name="switch_auto_check_updates">Автоматически проверять обновления</string>
+    <string name="switch_ws_padding">WS frame padding (обфускация DPI)</string>
+    <string name="switch_doh_rotation">Ротация DoH провайдеров</string>
+    <string name="card_link">Ссылка для подключения</string>
+    <string name="btn_copy">Копировать</string>
+    <string name="card_stats">Статистика</string>
+    <string name="stats_total">Всего</string>
+    <string name="stats_active">Активно</string>
+    <string name="stats_ws">WS</string>
+    <string name="stats_tcp">TCP</string>
+    <string name="stats_cf">CF</string>
+    <string name="stats_bad">Bad</string>
+    <string name="traffic_up">Отдано</string>
+    <string name="traffic_down">Принято</string>
+
+    <!-- Logs screen -->
+    <string name="btn_refresh">Обновить</string>
+    <string name="btn_clear">Очистить</string>
+    <string name="btn_share">Поделиться</string>
+    <string name="btn_save">Сохранить</string>
+    <string name="log_level_debug">Debug</string>
+    <string name="log_level_info">Info</string>
+    <string name="log_level_warn">Warn</string>
+    <string name="toast_no_logs">Нет логов для отправки</string>
+    <string name="toast_save_error">Ошибка сохранения</string>
+    <string name="toast_saved">Сохранено</string>
+
+    <!-- Помощь -->
+    <string name="btn_help">Справка</string>
+    <string name="help_title">Справка</string>
+
+    <!-- Update checker -->
+    <string name="btn_check_update">Проверить обновление</string>
+    <string name="update_title">Доступно обновление</string>
+    <string name="update_message">Версия %s уже вышла. Открыть страницу релиза?</string>
+    <string name="update_yes">Открыть</string>
+    <string name="update_no">Позже</string>
+    <string name="update_dont_ask">Больше не проверять автоматически</string>
+    <string name="update_latest">У вас последняя версия</string>
+    <string name="update_check_error">Не удалось проверить обновление: %s</string>
+    <string name="toast_settings_saved">Настройки сохранены</string>
+    <string name="toast_enter_host">Укажите IP-адрес</string>
+    <string name="toast_port_range">Порт должен быть числом 1-65535</string>
+    <string name="toast_secret_hex">Секрет должен содержать ровно 32 hex-символа</string>
+    <string name="toast_dc_format">Некорректный формат DC:IP — %s</string>
+    <string name="toast_telegram_not_installed">Telegram не установлен</string>
+    <string name="language_auto">Авто</string>
+    <string name="language_ru">Русский</string>
+    <string name="language_en">English</string>
+    <string name="settings_language">Язык</string>
+
+    <!-- Notification -->
+    <string name="notification_channel_name">TG WS Proxy Service</string>
+    <string name="notification_running">Прокси запущен</string>
+    <string name="notification_stopped">Прокси остановлен</string>
+</resources>

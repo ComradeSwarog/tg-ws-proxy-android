@@ -1,12 +1,86 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TG WS Proxy</string>
-    <string name="proxy_running">Прокси запущен</string>
-    <string name="proxy_stopped">Прокси остановлен</string>
-    <string name="proxy_status">Состояние прокси</string>
-    <string name="btn_enable">Включить</string>
-    <string name="btn_disable">Выключить</string>
-    <string name="link_copied">Ссылка скопирована</string>
+
+    <!-- Main screen -->
+    <string name="tab_proxy">Proxy</string>
+    <string name="tab_logs">Logs</string>
+    <string name="proxy_running">Proxy running</string>
+    <string name="proxy_stopped">Proxy stopped</string>
+    <string name="proxy_status">Proxy status</string>
+    <string name="btn_enable">Start</string>
+    <string name="btn_disable">Stop</string>
+
+    <string name="link_copied">Link copied</string>
+    <string name="open_telegram">Open in Telegram</string>
+    <string name="regen_secret">Generate secret</string>
+    <string name="hint_host">Host</string>
+    <string name="hint_port">Port</string>
+    <string name="hint_secret">Secret (32 hex)</string>
+    <string name="hint_dc_ip">DC:IP (one per line)</string>
+    <string name="hint_fake_tls">Fake TLS domain (obfs2)</string>
+    <string name="hint_pool_size">WS pool size</string>
+    <string name="card_enhanced_settings">Bypass settings</string>
+    <string name="switch_doh">DoH resolving</string>
+    <string name="switch_auto_fake_tls">Auto Fake TLS (if direct IP blocked)</string>
+    <string name="switch_parallel">Parallel connect to multiple IPs</string>
+    <string name="switch_media_cf">Media via CF (traffic saving)</string>
+    <string name="switch_cf_proxy">CF Proxy fallback</string>
+    <string name="switch_cf_priority">CF Proxy priority</string>
+    <string name="switch_background">Work in background</string>
+    <string name="switch_auto_check_updates">Auto check for updates</string>
+    <string name="switch_ws_padding">WS frame padding (DPI obfuscation)</string>
+    <string name="switch_doh_rotation">Rotate DoH providers</string>
+    <string name="card_link">Connection link</string>
+    <string name="btn_copy">Copy</string>
+    <string name="card_stats">Statistics</string>
+    <string name="stats_total">Total</string>
+    <string name="stats_active">Active</string>
+    <string name="stats_ws">WS</string>
+    <string name="stats_tcp">TCP</string>
+    <string name="stats_cf">CF</string>
+    <string name="stats_bad">Bad</string>
+    <string name="traffic_up">Up</string>
+    <string name="traffic_down">Down</string>
+
+    <!-- Logs screen -->
+    <string name="btn_refresh">Refresh</string>
+    <string name="btn_clear">Clear</string>
+    <string name="btn_share">Share</string>
+    <string name="btn_save">Save</string>
+    <string name="log_level_debug">Debug</string>
+    <string name="log_level_info">Info</string>
+    <string name="log_level_warn">Warn</string>
+    <string name="toast_no_logs">No logs to share</string>
+    <string name="toast_save_error">Save error</string>
+    <string name="toast_saved">Saved</string>
+
+    <!-- Help -->
+    <string name="btn_help">Help</string>
+    <string name="help_title">Help</string>
+
+    <!-- Update checker -->
+    <string name="btn_check_update">Check for update</string>
+    <string name="update_title">Update available</string>
+    <string name="update_message">Version %s has been released. Would you like to open the release page?</string>
+    <string name="update_yes">Open</string>
+    <string name="update_no">Later</string>
+    <string name="update_dont_ask">Do not check automatically</string>
+    <string name="update_latest">You have the latest version</string>
+    <string name="update_check_error">Could not check for updates: %s</string>
+    <string name="toast_settings_saved">Settings saved</string>
+    <string name="toast_enter_host">Please enter host</string>
+    <string name="toast_port_range">Port must be 1-65535</string>
+    <string name="toast_secret_hex">Secret must have 32 hex characters</string>
+    <string name="toast_dc_format">Invalid DC:IP format in</string>
+    <string name="toast_telegram_not_installed">Telegram is not installed</string>
+    <string name="language_auto">Auto</string>
+    <string name="language_ru">Russian</string>
+    <string name="language_en">English</string>
+    <string name="settings_language">Language</string>
+
+    <!-- Notification -->
     <string name="notification_channel_name">TG WS Proxy Service</string>
-    <string name="notification_running">Прокси запущен</string>
+    <string name="notification_running">Proxy is running</string>
+    <string name="notification_stopped">Proxy stopped</string>
 </resources>
