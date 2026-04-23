@@ -30,6 +30,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped versionCode: 2 → 3, versionName: 1.1.1 → 1.2.0
 - Updated unit tests to match new `baseTtlMs` parameter name
 
+## [1.4.0] - 2026-04-23
+
+### Added
+- **Russian & English Localization**: Full `strings.xml` resource sets for both languages. System locale auto-detection (non-Ru → English). Manual language switcher (Auto / Russian / English) in Bypass Settings card — applies after Activity restart via `LocaleUtils`.
+- **In-app Help**: `HelpActivity` with localized HTML loaded from `assets/help_{lang}.html`. Covers Quick Start, all settings, bypass modes, logs, and tips.
+- **Check for Updates**: `UpdateChecker` queries GitHub `releases/latest` API with 1-hour rate-limit, ETag caching, and simple version tuple comparison. Auto-check on startup (default on, controllable by "Auto check for updates" switch in Bypass Settings). Manual check button with refresh icon in toolbar.
+- **UI Switches**: Added `ws_frame_padding` and `doh_rotation` toggles to the Bypass Settings card. Previously only configurable via code.
+- **EN/RU Screenshot documentation**: README now shows side-by-side English and Russian UI screenshots.
+
+### Fixed
+- **Language selector placement**: Moved from top header into the "Bypass Settings" card for better discoverability.
+- **Update dialog simplification**: Removed checkbox from update dialog; control consolidated into the settings switch.
+
+### Internal
+- Bumped versionCode: 4 → 5, versionName: 1.3.0 → 1.4.0
+- Added `LocaleUtils`, `HelpActivity`, `UpdateChecker` components
+- Added `ic_help.xml` vector drawable, `dialog_update.xml` layout
+- All 18 unit tests pass
+
+### Documentation
+- Updated `README.md` with EN/RU screenshots, expanded Features table, Bypass Settings table with defaults, extended Architecture table
+- Updated `AGENTS.md` with new Kotlin file references
+
 ## [1.3.0] - 2026-04-23
 
 ### Added
