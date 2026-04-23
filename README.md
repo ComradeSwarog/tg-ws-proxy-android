@@ -29,44 +29,30 @@ The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as 
 ## Features
 
 | Feature | Description |
-|---|---|
+|---|---|---|
 | **MTProto ↔ WebSocket Bridge** | Transparent bridge between Telegram app and Telegram DCs |
 | **DoH (DNS-over-HTTPS)** | Bypass DNS spoofing with encrypted DNS resolution |
 | **CF Proxy Fallback** | Automatic fallback via Cloudflare Workers if direct IPs are blocked |
 | **Parallel Connect** | Race multiple IPs simultaneously for sub-second handshakes |
 | **Auto Fake TLS** | Automatic TLS SNI camouflage for DPI bypass |
 | **Media via CF** | Route media traffic through Cloudflare to save bandwidth |
+| **Frame Padding + DoH Rotation** | Optional WS padding + cyclic DoH provider rotation |
 | **Pre-warmed CF Pool** | Background health-check before first real connection (< 1s cold-start) |
 | **Connection Pool** | Keep-alive pool with automatic refilling and age-based eviction |
 | **Foreground Service** | Persistent notification, optional background restart |
 | **In-app Logs** | Live log viewer with export to `.txt` (share or save to Downloads) |
 | **Proxy Link** | Auto-generate `tg://proxy` link with dd/ee secret |
+| **RU / EN Localization** | Auto-detect system language; manual switcher in settings |
+| **In-app Help** | Localized help screen with full feature docs |
+| **Check for Updates** | Automatic GitHub Releases check on startup; manual button in toolbar |
 
 ---
 
-## UI Overview
+## Screenshots
 
-| Home Tab | Logs Tab |
+| English (running) | Русский (работает) |
 |---|---|
-| Proxy on/off toggle | Live log stream (2000 line buffer) |
-| Connection stats | Filter by level (DBG / INF / WRN / ERR) |
-| Generated proxy link | Export / Share / Clear |
-| Settings (scrollable): Host, Port, Secret, DC:IP, bypass toggles | File logs with rotation (3 × 2MB files) |
-
-> Tap **"Open in Telegram"** → Telegram opens proxy settings directly.
-
----
-
-## Requirements
-
-- Android **8.0+** (API 26+)
-- Network permission (auto-granted)
-
----
-
-## Screenshot
-
-![App Screenshot](screenshots/app-screenshot.jpg)
+| ![App EN](screenshots/app-screenshot-en.jpg) | ![App RU](screenshots/app-screenshot-ru.jpg) |
 
 ---
 
@@ -111,11 +97,27 @@ Outputs:
 ## Bypass Modes
 
 | Mode | When it triggers |
-|---|---|
+|---|---|---|
 | **Direct WS** | Connects to `kws{dc}.web.telegram.org` via DoH + parallel TCP |
 | **CF Fallback** | Triggered if direct WebSocket fails or DPI blocks it |
 | **TCP Fallback** | Plain TCP to known DC IPs as last resort |
 | **Cold-start fast lane** | Skips direct connect on first run (no CF history yet) for speed |
+
+### Settings — Bypass Settings Card
+
+| Setting | Default | Description |
+|---|---|---|
+| DoH resolving | ✅ on | Encrypted DNS resolution |
+| Auto Fake TLS | ✅ on | SNI camo when direct IP blocked |
+| Parallel connect | ✅ on | Multi-IP race for fast fallback |
+| CF Proxy fallback | ✅ on | Use CF Worker backup |
+| CF Proxy priority | ✅ on | Try CF before direct |
+| Media via CF | ✅ off | Route downloads through CF |
+| WS frame padding | ⬜ off | Random WS frame padding (DPI obfuscation) |
+| Rotate DoH providers | ✅ on | Cycle Cloudflare → Google → Quad9 |
+| Work in background | ⬜ off | Keep proxy alive after UI close |
+| Language | Auto | Auto / Russian / English |
+| Auto check for updates | ✅ on | Check GitHub Releases on startup |
 
 ---
 
@@ -150,7 +152,7 @@ Full changelog: [CHANGELOG.md](CHANGELOG.md)
 ## Architecture (Port Mapping)
 
 | Original Python | Kotlin port |
-|---|---|
+|---|---|---|
 | `proxy/tg_ws_proxy.py` | `TgWsProxy.kt` |
 | `proxy/bridge.py` | Bridge + fallback logic in `TgWsProxy.kt` |
 | `proxy/fake_tls.py` | `handleFakeTLS`, `FakeTlsInputStream` |
@@ -160,6 +162,9 @@ Full changelog: [CHANGELOG.md](CHANGELOG.md)
 | `proxy/balancer.py` | `Balancer.kt` |
 | `proxy/doh_resolver.py` | `DoHResolver.kt` |
 | `proxy/utils.py` | `MtProtoConstants.kt` |
+| `ui/settings.py` | `MainActivity.kt` + `HelpActivity.kt` |
+| `utils/update_check.py` | `UpdateChecker.kt` |
+| `utils/locale.py` | `LocaleUtils.kt` |
 
 ---
 
