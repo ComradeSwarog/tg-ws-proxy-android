@@ -139,14 +139,9 @@ class ProxyService : Service() {
         Log.d(TAG, "onDestroy called")
         domainRefreshJob?.cancel()
         serviceScope.cancel()
-        val workInBackground = PreferenceManager.getDefaultSharedPreferences(this)
-            .getBoolean("work_in_background", false)
-
-        if (workInBackground && isProxyRunning) {
-            scheduleRestart()
-        } else {
-            stopProxy()
-        }
+        // Prevent double restart: onTaskRemoved already schedules restart if needed.
+        // onDestroy here only ensures clean shutdown of proxy and coroutines.
+        stopProxy()
         super.onDestroy()
     }
 
