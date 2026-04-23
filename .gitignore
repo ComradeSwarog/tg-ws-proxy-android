@@ -16,6 +16,8 @@ captures/.externalNativeBuild.cxxbuild/
 release.keystore
 *.jks
 
+.venv_blur/
+
 # Temp / local scripts
 write_files.py
 *.bat

@@ -30,6 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped versionCode: 2 → 3, versionName: 1.1.1 → 1.2.0
 - Updated unit tests to match new `baseTtlMs` parameter name
 
+## [1.5.0-beta] - 2026-04-23
+
+### Fixed (Samsung/Android 16 Stability)
+- **Foreground service throttling**: Added `PARTIAL_WAKE_LOCK` and `WifiLock` to `ProxyService` to prevent Samsung Device Care / Android 16 from suspending network I/O after ~10–15 minutes of inactive screen. Fixes reported "works then freezes then recovers" pattern on Galaxy S24 / Android 16.
+- **Updated foreground service type**: Changed from `specialUse` to `dataSync` in `AndroidManifest.xml` and added `FOREGROUND_SERVICE_DATA_SYNC` permission. Android 16+ is less aggressive with `dataSync` foreground services in App Standby Buckets.
+- **Adaptive WifiLock mode**: Uses `WIFI_MODE_FULL_LOW_LATENCY` (Android 10+) for modern chipsets, falling back to deprecated `WIFI_MODE_FULL_HIGH_PERF` on older devices. Both keep radio active during proxy operations.
+- **WakeLock safety**: 30-minute acquisition window with explicit `releaseWakeLocks()` on `stopProxy()`, preventing battery drain if service crashes.
+
+### Internal
+- Bumped versionCode: 5 → 6, versionName: 1.4.0 → 1.5.0-beta
+
 ## [1.4.0] - 2026-04-23
 
 ### Added

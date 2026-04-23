@@ -8,7 +8,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -38,11 +41,13 @@ class ProxyService : Service() {
 
     private var proxy: TgWsProxy? = null
     private var config: ProxyConfig? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private val serviceScope = CoroutineScope(
         Dispatchers.IO + SupervisorJob() + CoroutineExceptionHandler { _, throwable ->
             Log.e(TAG, "Coroutine exception: ${throwable.message}", throwable)
             if (throwable is OutOfMemoryError) {
-                Log.e(TAG, "OOM in serviceScope — triggering graceful shutdown")
+                Log.e(TAG, "OOM in serviceScope \u2014 triggering graceful shutdown")
                 stopProxy()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -168,6 +173,7 @@ class ProxyService : Service() {
 
         val notification = buildNotification(running = true)
         startForeground(NOTIFICATION_ID, notification)
+        acquireWakeLocks()
 
         proxy = TgWsProxy(cfg, balancer) { status ->
             when {
@@ -248,6 +254,43 @@ class ProxyService : Service() {
         proxy = null
         isProxyRunning = false
         onProxyStateChanged?.invoke(false)
+        releaseWakeLocks()
+    }
+
+    private fun acquireWakeLocks() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TgWsProxy::ProxyWakeLock")
+            wakeLock?.acquire(30 * 60 * 1000L) // 30 min window, re-acquired periodically by keep-alive
+            AppLogger.d(TAG, "WakeLock acquired (30 min)")
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Failed to acquire WakeLock: ${e.message}")
+        }
+        try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val wifiLockMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                @Suppress("DEPRECATION")
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            }
+            wifiLock = wm.createWifiLock(wifiLockMode, "TgWsProxy::WifiLock")
+            wifiLock?.acquire()
+            AppLogger.d(TAG, "WifiLock acquired")
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Failed to acquire WifiLock: ${e.message}")
+        }
+    }
+
+    private fun releaseWakeLocks() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+            AppLogger.d(TAG, "WakeLock released")
+        } catch (_: Exception) {}
+        try {
+            if (wifiLock?.isHeld == true) wifiLock?.release()
+            AppLogger.d(TAG, "WifiLock released")
+        } catch (_: Exception) {}
     }
 
     private fun loadConfig(): ProxyConfig {
