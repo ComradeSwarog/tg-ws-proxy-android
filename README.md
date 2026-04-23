@@ -125,7 +125,6 @@ Outputs:
 
 | Feature | Status | Notes |
 |---|---|---|
-| **Russian UI localisation** | ✅ **Done** | Interface already in Russian |
 | **QUIC transport instead of WS** | 🔮 **Research** | QUIC (UDP-based, HTTP/3) is harder for DPI to fingerprint and has faster 0-RTT handshake. Telegram does not yet expose QUIC for MTProto WebSocket; experimental if backend support appears. |
 | **WireGuard / OpenVPN tunnel integration** | 🔮 **Research** | Would turn the app into a system-level VPN tunnel (`VpnService`) so all traffic (not just Telegram) is bypassed. This is a major architecture shift — evaluate if out of scope. |
 | **Auto-update domain pool from upstream repo** | 📋 **Planned** | Periodically fetch fresh CF Worker domains from the upstream `tg-ws-proxy` pool. |
