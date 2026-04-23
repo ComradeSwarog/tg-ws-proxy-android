@@ -17,8 +17,10 @@ h2{color:#1565C0;} h3{color:#1976D2; margin-top:24px;}
 <li>Copy the connection link or tap <b>Open in Telegram</b> to paste it into Telegram proxy settings.</li>
 </ol>
 
-<h3>What’s New in v1.3.0–v1.4.0</h3>
+<h3>What’s New in v1.5.0</h3>
 <ul>
+<li><b>Auto-generated Secret</b> — a new 32-hex secret is created on first launch. Tap the refresh icon next to the Secret field to regenerate anytime.</li>
+<li><b>Samsung/Android 16 Stability</b> — WakeLock refresh + updated foreground service type prevents system throttling network I/O after ~30 minutes.</li>
 <li><b>Localization</b> — Russian & English. App auto-detects system language; you can also switch manually in "Bypass Settings".</li>
 <li><b>In-app Help</b> — this screen, opened via the <b>?</b> button in the toolbar.</li>
 <li><b>Check for Updates</b> — button with refresh icon in the toolbar; auto-check on startup can be enabled/disabled in "Bypass Settings".</li>
@@ -28,7 +30,7 @@ h2{color:#1565C0;} h3{color:#1976D2; margin-top:24px;}
 <h3>Settings</h3>
 <ul>
 <li><b>Host / Port</b> — local listen address (default 127.0.0.1:1443).</li>
-<li><b>Secret</b> — 32 hex characters. Tap <b>Generate secret</b> to create one.</li>
+<li><b>Secret</b> — 32 hex characters, auto-generated on first launch. Tap the refresh icon next to the field to regenerate.</li>
 <li><b>DC:IP</b> — mapping of Telegram DC numbers to direct IPs (one per line).</li>
 <li><b>Fake TLS domain</b> — domain for SNI obfuscation (obfs2), e.g. <code>cloudflare.com</code>.</li>
 <li><b>Pool size</b> — number of pre-warmed WebSocket connections.</li>

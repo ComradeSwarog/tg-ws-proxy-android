@@ -39,9 +39,10 @@ The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as 
 | **Frame Padding + DoH Rotation** | Optional WS padding + cyclic DoH provider rotation |
 | **Pre-warmed CF Pool** | Background health-check before first real connection (< 1s cold-start) |
 | **Connection Pool** | Keep-alive pool with automatic refilling and age-based eviction |
-| **Foreground Service** | Persistent notification, optional background restart |
+| **Foreground Service Hardening** | `dataSync` type + `WakeLock` + `WifiLock` — Samsung/Android 16 won't throttle network I/O after 30 min |
+| **WakeLock Refresh** | Re-acquires wake lock every 25 min before Samsung's timeout expires |
 | **In-app Logs** | Live log viewer with export to `.txt` (share or save to Downloads) |
-| **Proxy Link** | Auto-generate `tg://proxy` link with dd/ee secret |
+| **Auto-generated Secret** | Fresh 32-hex secret generated on first launch. Tap the inline refresh icon to regenerate anytime |
 | **RU / EN Localization** | Auto-detect system language; manual switcher in Bypass Settings |
 | **In-app Help** | Localized help screen with full feature docs |
 | **Check for Updates** | Automatic GitHub Releases check on startup; manual button in toolbar |
@@ -139,10 +140,11 @@ Outputs:
 |---|---|---|
 | App crash on proxy connect | NPE in `ConcurrentHashMap.put(null)` from failed parallel socket | `51b51de` |
 | Service killed / restart loop | `ForegroundServiceDidNotStartInTimeException` on sticky restart | `f9d5910` |
+| Samsung/Android 16 freeze | Device Care throttles foreground service network I/O after ~30 min | WakeLock refresh + `dataSync` foreground service type |
 | Hanging after hours | Global `SSLSocketFactory` poisoning JVM | `5674d6f` |
 | DNS NXDOMAIN flood | System DNS caches negative entries indefinitely | `5674d6f` |
 | Socket FD exhaustion | Parallel connect leaked loser's sockets | `5674d6f` |
-| Telegram handshake timeout | `soTimeout=10s` too short for MTProto handshake silence | `5674d6f` |
+| **Samsung/Android 16 freeze** | Device Care throttles foreground service network I/O after ~30 min | WakeLock refresh + `dataSync` foreground service type |
 
 Full changelog: [CHANGELOG.md](CHANGELOG.md)
 
