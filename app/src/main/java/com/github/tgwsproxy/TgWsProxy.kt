@@ -193,8 +193,7 @@ class TgWsProxy(
             val target = config.dcRedirects[dc]!!
 
             var ws: RawWebSocket? = null
-            // Fast path: if CF proven active, skip direct attempts to avoid
-            // the ~20s Telegram timeout while direct WebSocket is blocked.
+            var splitter: MsgSplitter? = null
             if (now >= provenUntil) {
                 ws = wsPool.get(dc, isMedia, target, domains)
                 if (ws != null) {
@@ -207,17 +206,19 @@ class TgWsProxy(
                     dcFailUntil.remove(dcKey)
                     stats.connectionsWs.incrementAndGet()
                     AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> WS connected")
-                    val splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { AppLogger.w(TAG, "[$label] MsgSplitter init failed: ${e.message}"); null }
+                    splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { AppLogger.w(TAG, "[$label] MsgSplitter init failed: ${e.message}"); null }
                     ws.send(relayInit)
                     bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
                     return
                 }
-                // Direct failed — mark cooldown and fall through to fallback
                 dcFailUntil[dcKey] = now + DC_FAIL_COOLDOWN
                 AppLogger.w(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> WS FAILED, going to fallback")
             } else {
                 AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> CF proven active, skipping direct")
             }
+
+            splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { null }
+            doFallback(cltInput, cltOutput, relayInit, label, dc, isMedia, ctx, splitter)
         } catch (e: CancellationException) {
             AppLogger.d(TAG, "[$label] handleClient cancelled (scope shutting down)")
         } catch (e: Exception) {
