@@ -29,7 +29,7 @@ The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as 
 ## Features
 
 | Feature | Description |
-|---|---|---|
+|---|---|
 | **MTProto ↔ WebSocket Bridge** | Transparent bridge between Telegram app and Telegram DCs |
 | **DoH (DNS-over-HTTPS)** | Bypass DNS spoofing with encrypted DNS resolution |
 | **CF Proxy Fallback** | Automatic fallback via Cloudflare Workers if direct IPs are blocked |
@@ -42,7 +42,7 @@ The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as 
 | **Foreground Service** | Persistent notification, optional background restart |
 | **In-app Logs** | Live log viewer with export to `.txt` (share or save to Downloads) |
 | **Proxy Link** | Auto-generate `tg://proxy` link with dd/ee secret |
-| **RU / EN Localization** | Auto-detect system language; manual switcher in settings |
+| **RU / EN Localization** | Auto-detect system language; manual switcher in Bypass Settings |
 | **In-app Help** | Localized help screen with full feature docs |
 | **Check for Updates** | Automatic GitHub Releases check on startup; manual button in toolbar |
 
@@ -50,7 +50,7 @@ The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as 
 
 ## Screenshots
 
-| English (running) | Русский (работает) |
+| English | Русский |
 |---|---|
 | ![App EN](screenshots/app-screenshot-en.jpg) | ![App RU](screenshots/app-screenshot-ru.jpg) |
 
@@ -97,7 +97,7 @@ Outputs:
 ## Bypass Modes
 
 | Mode | When it triggers |
-|---|---|---|
+|---|---|
 | **Direct WS** | Connects to `kws{dc}.web.telegram.org` via DoH + parallel TCP |
 | **CF Fallback** | Triggered if direct WebSocket fails or DPI blocks it |
 | **TCP Fallback** | Plain TCP to known DC IPs as last resort |
@@ -152,7 +152,7 @@ Full changelog: [CHANGELOG.md](CHANGELOG.md)
 ## Architecture (Port Mapping)
 
 | Original Python | Kotlin port |
-|---|---|---|
+|---|---|
 | `proxy/tg_ws_proxy.py` | `TgWsProxy.kt` |
 | `proxy/bridge.py` | Bridge + fallback logic in `TgWsProxy.kt` |
 | `proxy/fake_tls.py` | `handleFakeTLS`, `FakeTlsInputStream` |
