@@ -22,6 +22,9 @@ release.keystore
 write_files.py
 *.bat
 
+# Session context (local only, not for repo)
+SESSION_CONTEXT.md
+
 # OS files
 .DS_Store
 Thumbs.db

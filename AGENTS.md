@@ -88,7 +88,7 @@ Already in `.gitignore`, but remember:
 | File | Purpose |
 |---|---|
 | `app/src/main/java/com/github/tgwsproxy/TgWsProxy.kt` | Main proxy server |
-| `app/src/main/java/com/github/tgwsproxy/RawWebSocket.kt` | WS client with DoH/parallel connect |
+| `app/src/main/java/com/github/tgwsproxy/RawWebSocket.kt` | WS client with DoH/parallel connect, **separate TLS handshake executor** |
 | `app/src/main/java/com/github/tgwsproxy/ProxyService.kt` | Foreground service |
 | `app/src/main/java/com/github/tgwsproxy/ProxyConfig.kt` | DPI bypass settings (DoH, padding, CF fallback) |
 | `app/src/main/java/com/github/tgwsproxy/DoHResolver.kt` | DoH resolver with endpoint rotation |
