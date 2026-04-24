@@ -207,9 +207,15 @@ class TgWsProxy(
                 return
             }
 
+            // If direct WS is known to be failing, skip race entirely and go straight to CF fallback
+            if (now < failUntil) {
+                AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> direct blocked (cooldown), CF fallback directly")
+                doFallback(cltInput, cltOutput, relayInit, label, dc, isMedia, ctx, splitter)
+                return
+            }
+
             // RACE: try direct WS and CF fallback in parallel for fastest first-connect
-            val directTmo = if (now < failUntil) WS_FAIL_TIMEOUT else config.handshakeTimeoutMs
-            if (raceConnection(dc, isMedia, target, domains, directTmo, label, cltInput, cltOutput, relayInit, ctx, splitter)) {
+            if (raceConnection(dc, isMedia, target, domains, config.handshakeTimeoutMs, label, cltInput, cltOutput, relayInit, ctx, splitter)) {
                 return
             }
 
@@ -246,7 +252,7 @@ class TgWsProxy(
             val baseDomain = domainIterator.next()
             val domain = "kws$dc.$baseDomain"
             try {
-                val ws = RawWebSocket.connect(domain, domain, 6_000, useDoH = false, retryMax = 1)
+                val ws = RawWebSocket.connect(domain, domain, 3_000, useDoH = false, retryMax = 1)
                 if (ws != null) {
                     balancer.updateDomainForDc(dc, baseDomain)
                     ws.close()
@@ -640,7 +646,6 @@ class TgWsProxy(
         }
 
         val cfJob = scope.launch(Dispatchers.IO) {
-            delay(150)
             if (!config.fallbackCfproxy && !config.mediaViaCf) return@launch
             if (winner.get()) return@launch
             val ok = try { cfproxyConnectOnly(dc, isMedia, label) } catch (_: Exception) { null }
@@ -650,14 +655,23 @@ class TgWsProxy(
         }
 
         try {
-            withTimeout(6500) {
+            withTimeout(4500) {
                 directJob.join(); cfJob.join()
             }
         } catch (_: TimeoutCancellationException) {
             directJob.cancel()
             cfJob.cancel()
-            AppLogger.w(TAG, "[$label] DC$dc race timed out after 6500ms")
+            AppLogger.w(TAG, "[$label] DC$dc race timed out after 4500ms")
         }
+        
+        // Ensure cleanup of jobs
+        if (!winner.get()) {
+            // Both jobs failed or timed out, cleanup any partial results
+            directWs?.close()
+            cfResult?.second?.close()
+            return false
+        }
+        
         if (directWs != null) {
             stats.connectionsWs.incrementAndGet()
             AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> RACE WON: direct")
@@ -691,7 +705,7 @@ class TgWsProxy(
             val baseDomain = domainIterator.next()
             val domain = "kws$dc.$baseDomain"
             try {
-                val ws = RawWebSocket.connect(domain, domain, 6_000, useDoH = false, retryMax = 1)
+                val ws = RawWebSocket.connect(domain, domain, 3_000, useDoH = false, retryMax = 1)
                 if (ws != null) {
                     balancer.updateDomainForDc(dc, baseDomain)
                     return Triple(true, ws, baseDomain)
@@ -765,7 +779,7 @@ class TgWsProxy(
             val baseDomain = domainIterator.next()
             val domain = "kws$dc.$baseDomain"
             try {
-                val ws = RawWebSocket.connect(domain, domain, 6_000, useDoH = false, retryMax = 1)
+                val ws = RawWebSocket.connect(domain, domain, 3_000, useDoH = false, retryMax = 1)
                 if (ws != null) {
                     balancer.updateDomainForDc(dc, baseDomain)
                     cfSuccessCount[dcKey] = (cfSuccessCount[dcKey] ?: 0) + 1

@@ -114,9 +114,9 @@ class RawWebSocket private constructor(
             } else {
                 if (useDoH) {
                     AppLogger.d(logTag, "[attempt $attempt] DoH resolving $targetIp ...")
-                    val resolved = DoHResolver.resolve(targetIp, dohEndpoints, 8000, dohRotationEnabled)
+                    val resolved = DoHResolver.resolve(targetIp, dohEndpoints, 3000, dohRotationEnabled)
                         .takeIf { it.isNotEmpty() }
-                        ?: DoHResolver.resolve(domain, dohEndpoints, 8000, dohRotationEnabled)
+                        ?: DoHResolver.resolve(domain, dohEndpoints, 3000, dohRotationEnabled)
                     addrsToTry.addAll(resolved)
                     AppLogger.d(logTag, "[attempt $attempt] DoH resolved $targetIp -> $resolved")
                 }
@@ -151,10 +151,20 @@ class RawWebSocket private constructor(
         }
 
         /**
-         * Thread-safe ExecutorService for all parallel network operations in RawWebSocket.
-         * Prevents OutOfMemoryError: unable to create new native thread.
+         * Executor for parallel TCP connect attempts.
+         * Separate from [tlsHandshakeExecutor] to prevent deadlock:
+         * parallel connect threads wait on TLS handshake futures,
+         * so TLS must run on a different pool.
          */
         private val connectExecutor = Executors.newFixedThreadPool(8)
+
+        /**
+         * Dedicated executor for TLS handshake operations.
+         * Must be separate from [connectExecutor] to avoid thread-pool deadlock:
+         * connect threads submit TLS work and block on Future.get(),
+         * so TLS threads must come from a different pool.
+         */
+        private val tlsHandshakeExecutor = Executors.newCachedThreadPool()
 
         /**
          * Parallel connect to multiple IPs; returns first successful.
@@ -256,14 +266,15 @@ class RawWebSocket private constructor(
                 }
 
                 val tlsStart = System.currentTimeMillis()
-                val handshakeFuture = connectExecutor.submit {
+                val tlsTimeout = connTimeout.toLong().coerceAtMost(5000L)
+                val handshakeFuture = tlsHandshakeExecutor.submit {
                     sslSocket!!.startHandshake()
                 }
                 try {
-                    handshakeFuture.get(connTimeout.toLong(), java.util.concurrent.TimeUnit.MILLISECONDS)
+                    handshakeFuture.get(tlsTimeout, java.util.concurrent.TimeUnit.MILLISECONDS)
                 } catch (e: java.util.concurrent.TimeoutException) {
                     handshakeFuture.cancel(true)
-                    throw java.net.SocketTimeoutException("TLS handshake timed out after ${connTimeout}ms")
+                    throw java.net.SocketTimeoutException("TLS handshake timed out after ${tlsTimeout}ms")
                 }
                 AppLogger.d(logTag, "TLS handshake done $domain in ${System.currentTimeMillis() - tlsStart}ms protocol=${sslSocket.session?.protocol}")
 

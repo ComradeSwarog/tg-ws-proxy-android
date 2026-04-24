@@ -31,14 +31,17 @@ The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as 
 | Feature | Description |
 |---|---|
 | **MTProto ↔ WebSocket Bridge** | Transparent bridge between Telegram app and Telegram DCs |
+| **Parallel Race (Direct vs CF)** | On first connect, races direct WS and CF fallback simultaneously — winner bridges instantly |
+| **CF-Proven Mode** | After 2+ CF successes, skips slow direct attempts for 5 min; auto-recovers when network improves |
 | **DoH (DNS-over-HTTPS)** | Bypass DNS spoofing with encrypted DNS resolution |
 | **CF Proxy Fallback** | Automatic fallback via Cloudflare Workers if direct IPs are blocked |
 | **Parallel Connect** | Race multiple IPs simultaneously for sub-second handshakes |
 | **Auto Fake TLS** | Automatic TLS SNI camouflage for DPI bypass |
 | **Media via CF** | Route media traffic through Cloudflare to save bandwidth |
 | **Frame Padding + DoH Rotation** | Optional WS padding + cyclic DoH provider rotation |
-| **Pre-warmed CF Pool** | Background health-check before first real connection (< 1s cold-start) |
+| **Pre-warmed CF Pool** | Background health-check before first real connection (< 3s cold-start) |
 | **Connection Pool** | Keep-alive pool with automatic refilling and age-based eviction |
+| **Deadlock-free TLS** | Separate thread pools for parallel connect and TLS handshakes — no thread pool deadlock |
 | **Foreground Service Hardening** | `dataSync` type + `WakeLock` + `WifiLock` — Samsung/Android 16 won't throttle network I/O after 30 min |
 | **WakeLock Refresh** | Re-acquires wake lock every 25 min before Samsung's timeout expires |
 | **In-app Logs** | Live log viewer with export to `.txt` (share or save to Downloads) |
@@ -100,9 +103,10 @@ Outputs:
 | Mode | When it triggers |
 |---|---|
 | **Direct WS** | Connects to `kws{dc}.web.telegram.org` via DoH + parallel TCP |
-| **CF Fallback** | Triggered if direct WebSocket fails or DPI blocks it |
+| **Parallel Race** | First connect: races direct WS vs CF fallback simultaneously, winner bridges |
+| **CF Fallback** | Direct WebSocket failed or DPI blocks it; automatic via Cloudflare Workers |
+| **CF-Proven Fast Path** | After 2+ CF successes for a DC, skips direct entirely for 5 min |
 | **TCP Fallback** | Plain TCP to known DC IPs as last resort |
-| **Cold-start fast lane** | Skips direct connect on first run (no CF history yet) for speed |
 
 ### Settings — Bypass Settings Card
 
@@ -140,12 +144,13 @@ Outputs:
 |---|---|---|
 | App crash on proxy connect | NPE in `ConcurrentHashMap.put(null)` from failed parallel socket | `51b51de` |
 | Service killed / restart loop | `ForegroundServiceDidNotStartInTimeException` on sticky restart | `f9d5910` |
-| Proxy hanging after hours | `CF_SUCCESS_THRESHOLD=1` permanently blocks direct WS after 1 CF success; dead sockets leaked from pool; `soTimeout=0` causes infinite read hangs | Remove permanent CF lock-in (v1.6.0-beta) |
+| Proxy hanging after hours | `CF_SUCCESS_THRESHOLD=1` permanently blocks direct WS after 1 CF success; dead sockets leaked from pool; `soTimeout=0` causes infinite read hangs | Remove permanent CF lock-in (v1.6.0) |
 | Samsung/Android 16 freeze | Device Care throttles foreground service network I/O after ~30 min | WakeLock refresh + `dataSync` foreground service type |
 | Hanging after hours | Global `SSLSocketFactory` poisoning JVM | `5674d6f` |
 | DNS NXDOMAIN flood | System DNS caches negative entries indefinitely | `5674d6f` |
 | Socket FD exhaustion | Parallel connect leaked loser's sockets | `5674d6f` |
-| **Samsung/Android 16 freeze** | Device Care throttles foreground service network I/O after ~30 min | WakeLock refresh + `dataSync` foreground service type |
+| **Thread pool deadlock** | TLS handshake and parallel connect shared same 8-thread pool → all blocked | Separate `tlsHandshakeExecutor` (v1.6.0) |
+| **Slow first connect (8–20s)** | Excessive timeouts: CF 6s, DoH 8s, race 6.5s, TLS 8s + 150ms CF delay | All reduced: CF 3s, DoH 3s, race 4.5s, TLS 5s (v1.6.0) |
 
 Full changelog: [CHANGELOG.md](CHANGELOG.md)
 

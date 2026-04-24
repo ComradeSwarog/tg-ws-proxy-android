@@ -5,7 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.0-beta] - 2026-04-24
+## [1.6.0] - 2026-04-24
+
+### Added
+- **Parallel Race (Direct WS vs CF Fallback)**: On first connect, both direct WebSocket and Cloudflare fallback are launched simultaneously. The faster one wins and bridges immediately, reducing first-connect time to 1–3 seconds. (`TgWsProxy.kt`)
+- **CF-Proven Fast Path**: After 2+ successful CF connections to a DC, direct attempts are skipped for 5 minutes. Counters decay automatically (halved every 5 min) so direct paths are retried when network conditions improve. (`TgWsProxy.kt`)
+- **Deadlock-free TLS handshake**: TLS handshakes now run on a dedicated `tlsHandshakeExecutor` (cached thread pool), separate from the `connectExecutor` used for parallel TCP connects. Previously both shared one 8-thread pool — when all threads blocked on `Future.get()` waiting for TLS, no thread was available to actually execute the handshake, causing a deadlock where connections could never complete. (`RawWebSocket.kt`)
+
+### Fixed (Connection Speed)
+- **Slow first connect (8–20s → 1–3s)**: Aggressive timeout reductions across the board:
+  - CF proxy timeout: 6s → 3s (`cfproxyConnectOnly`, `cfproxyFallback`, `testCfForDc`)
+  - DoH resolution timeout: 8s → 3s (`RawWebSocket.tryConnectOnce`)
+  - Race hard cap: 6.5s → 4.5s (`raceConnection`)
+  - TLS handshake timeout cap: connTimeout (up to 8s) → 5s hard cap (`RawWebSocket.rawConnect`)
+  - Removed artificial 150ms CF stagger delay in race (`TgWsProxy.kt`)
+  - Known-blocked DCs now skip race entirely and go straight to CF fallback with zero delay (`TgWsProxy.kt`)
 
 ### Fixed (Stability & Hanging)
 - **Removed permanent CF-fallback lock-in**: `CF_SUCCESS_THRESHOLD` (set to 1) permanently blocked direct WebSocket connections after a single successful Cloudflare fallback, causing the proxy to rely exclusively on CF — eventually exhausting domains or hitting rate-limits. Now direct attempts are always permitted (subject only to the 60-second cooldown on hard failures). (`TgWsProxy.kt`)
@@ -15,11 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Service restart reliability**: `scheduleRestart()` now includes a fallback from `setExactAndAllowWhileIdle` to `setAndAllowWhileIdle` for devices that restrict exact alarms. Delay increased from 1s to 3–5s to allow cleanup to complete before restart. (`ProxyService.kt`)
 
 ### Documentation
-- Updated `README.md` Known Issues table with new entry for "Proxy hanging after hours".
-- Updated `help_en.html` and `help_ru.html` with v1.6.0-beta release notes.
+- Updated `README.md` Features table, Bypass Modes table, Known Issues table with v1.6.0 entries.
+- Updated `help_en.html` and `help_ru.html` with v1.6.0 release notes.
 
 ### Internal
-- Bumped versionCode: 6 → 7, versionName: "1.5.0" → "1.6.0-beta".
+- Bumped versionCode: 6 → 8, versionName: "1.5.0" → "1.6.0"
 
 ## [1.1.1] - 2026-04-22
 

@@ -5,63 +5,67 @@ h2{color:#1565C0;} h3{color:#1976D2; margin-top:24px;}
 .warning{background:#FFF3E0; padding:10px; border-radius:6px;}
 </style></head><body>
 
-<h2>TG WS Proxy — Help</h2>
+<h2>TG WS Proxy &mdash; Help</h2>
 <p>TG WS Proxy is an MTProto WebSocket bridge for Android with DPI bypass (DoH, parallel connect, CF fallback).</p>
 
 <h3>Quick Start</h3>
 <ol>
 <li>Configure your <b>Host</b>, <b>Port</b>, <b>Secret</b> and <b>DC:IP</b> mappings (default values work for most users).</li>
 <li>In the <b>Bypass Settings</b> card enable the features you need (see below).</li>
-<li>Tap <b>Save Settings</b> — all toggles and values are persisted.</li>
+<li>Tap <b>Save Settings</b> &mdash; all toggles and values are persisted.</li>
 <li>Tap <b>Start</b> to run the proxy.</li>
 <li>Copy the connection link or tap <b>Open in Telegram</b> to paste it into Telegram proxy settings.</li>
 </ol>
 
-<h3>What’s New in v1.6.0 (Beta)</h3>
+<h3>What's New in v1.6.0</h3>
 <ul>
-<li><b>Fixed proxy hanging after hours</b> — removed permanent CF-fallback lock-in that blocked direct WebSocket reconnections. CF success is now decayed every 5 minutes so direct paths are retried after transient blocks.</li>
-<li><b>Improved WebSocket pool health checks</b> — replaced unreliable blocking PING check with simple isClosed check, preventing dead sockets from being handed back to clients.</li>
-<li><b>WebSocket read timeout</b> — set a 70-second read timeout on underlying TLS socket so threads are freed instead of leaking on silent network drops.</li>
-<li><b>Service restart robustness</b> — restart alarm now has a reliable fallback for devices that restrict exact alarms, preventing stale proxy state after a crash or Doze.</li>
+<li><b>Parallel Race: Direct WS vs CF Fallback</b> &mdash; on first connect, both direct WebSocket and Cloudflare fallback are launched simultaneously. The faster one wins and bridges immediately, reducing first-connect time to 1&ndash;3 seconds.</li>
+<li><b>CF-Proven Fast Path</b> &mdash; after 2+ successful CF connections to a DC, direct attempts are skipped for 5 minutes. Counters decay automatically so direct paths are retried when network conditions improve.</li>
+<li><b>Fixed thread pool deadlock</b> &mdash; TLS handshakes now run on a dedicated thread pool, separate from the parallel connect pool. Previously they shared one pool, causing all threads to block with no thread available to execute TLS &mdash; connections could never complete.</li>
+<li><b>Fixed slow first connect (8&ndash;20s &rarr; 1&ndash;3s)</b> &mdash; aggressive timeout reductions: CF proxy 6s&rarr;3s, DoH 8s&rarr;3s, race cap 6.5s&rarr;4.5s, TLS handshake 8s&rarr;5s. Removed artificial 150ms CF delay. Known-blocked DCs skip race entirely and go straight to CF fallback.</li>
+<li><b>Fixed proxy hanging after hours</b> &mdash; removed permanent CF-fallback lock-in that blocked direct WebSocket reconnections. CF success is now decayed every 5 minutes so direct paths are retried after transient blocks.</li>
+<li><b>Improved WebSocket pool health checks</b> &mdash; replaced unreliable blocking PING check with simple isClosed check, preventing dead sockets from being handed back to clients.</li>
+<li><b>WebSocket read timeout</b> &mdash; set a 70-second read timeout on underlying TLS socket so threads are freed instead of leaking on silent network drops.</li>
+<li><b>Service restart robustness</b> &mdash; restart alarm now has a reliable fallback for devices that restrict exact alarms, preventing stale proxy state after a crash or Doze.</li>
 </ul>
 
-<h3>What’s New in v1.5.0</h3>
+<h3>What's New in v1.5.0</h3>
 <ul>
-<li><b>Auto-generated Secret</b> — a new 32-hex secret is created on first launch. Tap the refresh icon next to the Secret field to regenerate anytime.</li>
-<li><b>Samsung/Android 16 Stability</b> — WakeLock refresh + updated foreground service type prevents system throttling network I/O after ~30 minutes.</li>
-<li><b>Localization</b> — Russian & English. App auto-detects system language; you can also switch manually in "Bypass Settings".</li>
-<li><b>In-app Help</b> — this screen, opened via the <b>?</b> button in the toolbar.</li>
-<li><b>Check for Updates</b> — button with refresh icon in the toolbar; auto-check on startup can be enabled/disabled in "Bypass Settings".</li>
-<li><b>WS Frame Padding / DoH Rotation</b> — DPI obfuscation switches in "Bypass Settings".</li>
+<li><b>Auto-generated Secret</b> &mdash; a new 32-hex secret is created on first launch. Tap the refresh icon next to the Secret field to regenerate anytime.</li>
+<li><b>Samsung/Android 16 Stability</b> &mdash; WakeLock refresh + updated foreground service type prevents system throttling network I/O after ~30 minutes.</li>
+<li><b>Localization</b> &mdash; Russian &amp; English. App auto-detects system language; you can also switch manually in "Bypass Settings".</li>
+<li><b>In-app Help</b> &mdash; this screen, opened via the <b>?</b> button in the toolbar.</li>
+<li><b>Check for Updates</b> &mdash; button with refresh icon in the toolbar; auto-check on startup can be enabled/disabled in "Bypass Settings".</li>
+<li><b>WS Frame Padding / DoH Rotation</b> &mdash; DPI obfuscation switches in "Bypass Settings".</li>
 </ul>
 
 <h3>Settings</h3>
 <ul>
-<li><b>Host / Port</b> — local listen address (default 127.0.0.1:1443).</li>
-<li><b>Secret</b> — 32 hex characters, auto-generated on first launch. Tap the refresh icon next to the field to regenerate.</li>
-<li><b>DC:IP</b> — mapping of Telegram DC numbers to direct IPs (one per line).</li>
-<li><b>Fake TLS domain</b> — domain for SNI obfuscation (obfs2), e.g. <code>cloudflare.com</code>.</li>
-<li><b>Pool size</b> — number of pre-warmed WebSocket connections.</li>
+<li><b>Host / Port</b> &mdash; local listen address (default 127.0.0.1:1443).</li>
+<li><b>Secret</b> &mdash; 32 hex characters, auto-generated on first launch. Tap the refresh icon next to the field to regenerate.</li>
+<li><b>DC:IP</b> &mdash; mapping of Telegram DC numbers to direct IPs (one per line).</li>
+<li><b>Fake TLS domain</b> &mdash; domain for SNI obfuscation (obfs2), e.g. <code>cloudflare.com</code>.</li>
+<li><b>Pool size</b> &mdash; number of pre-warmed WebSocket connections.</li>
 </ul>
 
 <h3>Bypass Settings</h3>
 <ul>
-<li><b>DoH resolving</b> — resolves Telegram IPs via DNS-over-HTTPS instead of plain DNS.</li>
-<li><b>Auto Fake TLS</b> — automatically enables Fake TLS if direct IP connections are blocked.</li>
-<li><b>Parallel connect</b> — connects to multiple resolved IPs simultaneously for faster fallback.</li>
-<li><b>Media via CF</b> — routes media downloads through Cloudflare to save direct bandwidth.</li>
-<li><b>CF Proxy fallback</b> — uses Cloudflare Worker proxy when direct connections fail.</li>
-<li><b>CF Proxy priority</b> — tries Cloudflare before direct connections.</li>
-<li><b>WS frame padding</b> — adds self-describing random padding to WebSocket frames (disabled by default).</li>
-<li><b>Rotate DoH providers</b> — cyclically switches between Cloudflare, Google and Quad9 DoH endpoints.</li>
-<li><b>Work in background</b> — keeps the proxy running when the app UI is closed.</li>
-<li><b>Language</b> — Auto (system default), Russian or English. Switch applies after restart.</li>
-<li><b>Auto check for updates</b> — checks GitHub Releases on startup. Disable here if you prefer manual checks only.</li>
+<li><b>DoH resolving</b> &mdash; resolves Telegram IPs via DNS-over-HTTPS instead of plain DNS.</li>
+<li><b>Auto Fake TLS</b> &mdash; automatically enables Fake TLS if direct IP connections are blocked.</li>
+<li><b>Parallel connect</b> &mdash; connects to multiple resolved IPs simultaneously for faster fallback.</li>
+<li><b>Media via CF</b> &mdash; routes media downloads through Cloudflare to save direct bandwidth.</li>
+<li><b>CF Proxy fallback</b> &mdash; uses Cloudflare Worker proxy when direct connections fail.</li>
+<li><b>CF Proxy priority</b> &mdash; tries Cloudflare before direct connections.</li>
+<li><b>WS frame padding</b> &mdash; adds self-describing random padding to WebSocket frames (disabled by default).</li>
+<li><b>Rotate DoH providers</b> &mdash; cyclically switches between Cloudflare, Google and Quad9 DoH endpoints.</li>
+<li><b>Work in background</b> &mdash; keeps the proxy running when the app UI is closed.</li>
+<li><b>Language</b> &mdash; Auto (system default), Russian or English. Switch applies after restart.</li>
+<li><b>Auto check for updates</b> &mdash; checks GitHub Releases on startup. Disable here if you prefer manual checks only.</li>
 </ul>
 
 <h3>Logs</h3>
 <p>Open the <b>Logs</b> tab to view real-time proxy logs. You can refresh, clear, share or save them to the Downloads folder. Log level (Debug / Info / Warn) is controlled by the chips above the log window.</p>
 
-<p class="note"><b>Tip:</b> If something doesn’t work, switch log level to <b>Debug</b>, reproduce the issue and share the logs.</p>
+<p class="note"><b>Tip:</b> If something doesn't work, switch log level to <b>Debug</b>, reproduce the issue and share the logs.</p>
 
 </body></html>
