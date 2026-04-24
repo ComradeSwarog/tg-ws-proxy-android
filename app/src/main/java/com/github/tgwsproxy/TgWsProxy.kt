@@ -629,7 +629,9 @@ class TgWsProxy(
         var cfResult: Triple<Boolean, RawWebSocket?, String?>? = null
 
         val directJob = scope.launch(Dispatchers.IO) {
-            val ws = connectRawWsEnhanced(targetIp, domains, directTmo, dc, isMedia, label)
+            val ws = try {
+                connectRawWsEnhanced(targetIp, domains, directTmo, dc, isMedia, label)
+            } catch (_: Exception) { null }
             if (ws != null && winner.compareAndSet(false, true)) {
                 directWs = ws
             } else {
@@ -638,19 +640,24 @@ class TgWsProxy(
         }
 
         val cfJob = scope.launch(Dispatchers.IO) {
-            // CF fallback is slightly slower to establish due to domain resolution,
-            // so stagger it by 150ms unless direct is already failing fast.
             delay(150)
-            // Only race CF if it's actually enabled
             if (!config.fallbackCfproxy && !config.mediaViaCf) return@launch
             if (winner.get()) return@launch
-            val ok = cfproxyConnectOnly(dc, isMedia, label)
+            val ok = try { cfproxyConnectOnly(dc, isMedia, label) } catch (_: Exception) { null }
             if (ok != null && winner.compareAndSet(false, true)) {
                 cfResult = ok
             }
         }
 
-        directJob.join(); cfJob.join()
+        try {
+            withTimeout(6500) {
+                directJob.join(); cfJob.join()
+            }
+        } catch (_: TimeoutCancellationException) {
+            directJob.cancel()
+            cfJob.cancel()
+            AppLogger.w(TAG, "[$label] DC$dc race timed out after 6500ms")
+        }
         if (directWs != null) {
             stats.connectionsWs.incrementAndGet()
             AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> RACE WON: direct")

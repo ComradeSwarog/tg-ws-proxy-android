@@ -256,7 +256,15 @@ class RawWebSocket private constructor(
                 }
 
                 val tlsStart = System.currentTimeMillis()
-                sslSocket.startHandshake()
+                val handshakeFuture = connectExecutor.submit {
+                    sslSocket!!.startHandshake()
+                }
+                try {
+                    handshakeFuture.get(connTimeout.toLong(), java.util.concurrent.TimeUnit.MILLISECONDS)
+                } catch (e: java.util.concurrent.TimeoutException) {
+                    handshakeFuture.cancel(true)
+                    throw java.net.SocketTimeoutException("TLS handshake timed out after ${connTimeout}ms")
+                }
                 AppLogger.d(logTag, "TLS handshake done $domain in ${System.currentTimeMillis() - tlsStart}ms protocol=${sslSocket.session?.protocol}")
 
                 val input = sslSocket.getInputStream()
