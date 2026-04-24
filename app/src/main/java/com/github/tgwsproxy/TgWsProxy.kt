@@ -178,9 +178,9 @@ class TgWsProxy(
             val relayInit = generateRelayInit(protoTag, dcIdx)
             val ctx = buildCryptoCtx(clientDecPrekeyIv, secret, relayInit)
             val dcKey = "$dc${if (isMedia) "m" else ""}"
+            val splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { null }
 
             if (dc !in config.dcRedirects) {
-                val splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { null }
                 doFallback(cltInput, cltOutput, relayInit, label, dc, isMedia, ctx, splitter)
                 return
             }
@@ -188,36 +188,33 @@ class TgWsProxy(
             val now = System.currentTimeMillis()
             val failUntil = dcFailUntil[dcKey] ?: 0L
             val provenUntil = cfProvenUntil[dcKey] ?: 0L
-            val wsTimeout = if (now < failUntil) WS_FAIL_TIMEOUT else config.handshakeTimeoutMs
             val domains = wsDomains(dc, isMedia)
             val target = config.dcRedirects[dc]!!
 
-            var ws: RawWebSocket? = null
-            var splitter: MsgSplitter? = null
-            if (now >= provenUntil) {
-                ws = wsPool.get(dc, isMedia, target, domains)
-                if (ws != null) {
-                    AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> pool hit via $target")
-                } else {
-                    AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> pool miss, connecting to $target domains=$domains")
-                    ws = connectRawWsEnhanced(target, domains, wsTimeout, dc, isMedia, label, forFallback = false)
-                }
-                if (ws != null) {
-                    dcFailUntil.remove(dcKey)
-                    stats.connectionsWs.incrementAndGet()
-                    AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> WS connected")
-                    splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { AppLogger.w(TAG, "[$label] MsgSplitter init failed: ${e.message}"); null }
-                    ws.send(relayInit)
-                    bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
-                    return
-                }
-                dcFailUntil[dcKey] = now + DC_FAIL_COOLDOWN
-                AppLogger.w(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> WS FAILED, going to fallback")
-            } else {
-                AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> CF proven active, skipping direct")
+            // Fast path: pool hit (no need to race)
+            wsPool.get(dc, isMedia, target, domains)?.let { ws ->
+                stats.connectionsWs.incrementAndGet()
+                AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> pool hit via $target")
+                ws.send(relayInit)
+                bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
+                return
             }
 
-            splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { null }
+            // CF-proven mode: skip direct, go straight to fallback
+            if (now < provenUntil) {
+                AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> CF proven active, skipping direct")
+                doFallback(cltInput, cltOutput, relayInit, label, dc, isMedia, ctx, splitter)
+                return
+            }
+
+            // RACE: try direct WS and CF fallback in parallel for fastest first-connect
+            val directTmo = if (now < failUntil) WS_FAIL_TIMEOUT else config.handshakeTimeoutMs
+            if (raceConnection(dc, isMedia, target, domains, directTmo, label, cltInput, cltOutput, relayInit, ctx, splitter)) {
+                return
+            }
+
+            dcFailUntil[dcKey] = now + DC_FAIL_COOLDOWN
+            AppLogger.w(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> race lost, going to fallback")
             doFallback(cltInput, cltOutput, relayInit, label, dc, isMedia, ctx, splitter)
         } catch (e: CancellationException) {
             AppLogger.d(TAG, "[$label] handleClient cancelled (scope shutting down)")
@@ -616,6 +613,93 @@ class TgWsProxy(
     }
 
     // ── Fallback ───────────────────────────────────────────────────
+
+    /**
+     * Race direct WS vs CF fallback. Returns true if a winner bridged and returned.
+     * Uses AtomicBoolean winner so the loser releases input/output cleanly.
+     */
+    private suspend fun raceConnection(
+        dc: Int, isMedia: Boolean, targetIp: String, domains: List<String>,
+        directTmo: Long, label: String,
+        cltInput: InputStream, cltOutput: OutputStream,
+        relayInit: ByteArray, ctx: CryptoCtx, splitter: MsgSplitter?
+    ): Boolean {
+        val winner = AtomicBoolean(false)
+        var directWs: RawWebSocket? = null
+        var cfResult: Triple<Boolean, RawWebSocket?, String?>? = null
+
+        val directJob = scope.launch(Dispatchers.IO) {
+            val ws = connectRawWsEnhanced(targetIp, domains, directTmo, dc, isMedia, label)
+            if (ws != null && winner.compareAndSet(false, true)) {
+                directWs = ws
+            } else {
+                ws?.close()
+            }
+        }
+
+        val cfJob = scope.launch(Dispatchers.IO) {
+            // CF fallback is slightly slower to establish due to domain resolution,
+            // so stagger it by 150ms unless direct is already failing fast.
+            delay(150)
+            // Only race CF if it's actually enabled
+            if (!config.fallbackCfproxy && !config.mediaViaCf) return@launch
+            if (winner.get()) return@launch
+            val ok = cfproxyConnectOnly(dc, isMedia, label)
+            if (ok != null && winner.compareAndSet(false, true)) {
+                cfResult = ok
+            }
+        }
+
+        directJob.join(); cfJob.join()
+        if (directWs != null) {
+            stats.connectionsWs.incrementAndGet()
+            AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> RACE WON: direct")
+            dcFailUntil.remove("$dc${if (isMedia) "m" else ""}")
+            directWs!!.send(relayInit)
+            bridgeWsReencrypt(cltInput, cltOutput, directWs!!, label, ctx, dc, isMedia, splitter)
+            return true
+        }
+        if (cfResult != null) {
+            val (_, ws, baseDomain) = cfResult!!
+            ws!!.send(relayInit)
+            val dcKey = "$dc${if (isMedia) "m" else ""}"
+            cfSuccessCount[dcKey] = (cfSuccessCount[dcKey] ?: 0) + 1
+            val count = cfSuccessCount[dcKey] ?: 0
+            if (count >= CF_PROVEN_MIN) cfProvenUntil[dcKey] = System.currentTimeMillis() + CF_PROVEN_TTL_MS
+            AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> RACE WON: CF (#$count via $baseDomain)")
+            stats.connectionsCfproxy.incrementAndGet()
+            bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Connect CF proxy for a DC and update balancer on success.
+     * Returns Triple(success, ws, baseDomain) or null if no CF domain works.
+     */
+    private fun cfproxyConnectOnly(dc: Int, isMedia: Boolean, label: String): Triple<Boolean, RawWebSocket?, String?>? {
+        val domainIterator = balancer.getDomainsForDc(dc)
+        while (domainIterator.hasNext()) {
+            val baseDomain = domainIterator.next()
+            val domain = "kws$dc.$baseDomain"
+            try {
+                val ws = RawWebSocket.connect(domain, domain, 6_000, useDoH = false, retryMax = 1)
+                if (ws != null) {
+                    balancer.updateDomainForDc(dc, baseDomain)
+                    return Triple(true, ws, baseDomain)
+                } else {
+                    balancer.markDomainFailed(baseDomain, baseTtlMs = 120_000L)
+                    AppLogger.w(TAG, "[$label] DC$dc CF proxy rejected/hit rate-limit by $baseDomain, blacklisted 2min")
+                }
+            } catch (_: CancellationException) { return null }
+            catch (e: Exception) {
+                AppLogger.w(TAG, "[$label] DC$dc CF proxy failed: ${e.message}")
+                balancer.markDomainFailed(baseDomain)
+            }
+        }
+        return null
+    }
 
     private suspend fun doFallback(cltInput: InputStream, cltOutput: OutputStream, relayInit: ByteArray, label: String, dc: Int, isMedia: Boolean, ctx: CryptoCtx, splitter: MsgSplitter?) {
         val fallbackDst = ProxyConfig.DC_DEFAULT_IPS[dc]

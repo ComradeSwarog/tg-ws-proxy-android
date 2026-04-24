@@ -1,13 +1,20 @@
-## What's New (Beta v1.6.0)
+## What's New (Beta v1.6.0-beta4 — Race Fix)
 
-### Fixed — Proxy Hanging After Hours (Critical)
-This beta fixes the root cause of the "proxy works for a while then silently stops connecting" issue reported on Android devices under mobile networks.
+### Fixed — First Connection Speed (5-9s → <2s)
+The previous beta (beta3-hf) worked correctly, but the **first connection after enabling proxy took 5-9 seconds**. This beta fixes that with a parallel race between Direct WS and CF fallback.
 
-- **Removed permanent CF-fallback lock-in**: `CF_SUCCESS_THRESHOLD` (set to 1) previously blocked all direct WebSocket connections after a single successful Cloudflare fallback, eventually forcing every connection exclusively through CF until domains were exhausted or rate-limited. Direct attempts are now always tried (subject to a 60-second cooldown after hard failures only).
-- **CF-success decay**: `cfSuccessCount` is halved every 5 minutes by a background cleanup coroutine. This prevents a transient CF success from permanently biasing the proxy away from direct paths when the network later improves.
-- **Fixed broken WebSocket pool health check**: `pingPongCheck()` used a blocking `recv()` expecting a PONG frame, but `recv()` handles PONG internally and never returns it — the check never completed, marking healthy pooled connections as dead. Replaced with a simple `!isClosed` check for speed and correctness.
-- **WebSocket read timeout**: Changed `sslSocket.soTimeout` from `0` (infinite) to **70 seconds** (`RawWebSocket.kt`). On mobile networks or during Doze, a "silent" network drop (no RST/FIN packet) previously caused threads to hang forever, eventually leading to OutOfMemoryError or service death. The timeout frees these threads cleanly.
-- **Service restart robustness**: `scheduleRestart()` now falls back from `setExactAndAllowWhileIdle` to `setAndAllowWhileIdle` on devices that restrict exact alarms. Restart delay increased from 1s to 3–5s to allow cleanup to complete before relaunch.
+- **Parallel race on first connect**: `handleClient()` now launches direct WS and CF fallback simultaneously via coroutines. The winner (whichever connects first) is used immediately, the loser is cancelled and its socket cleaned up. This cuts first-connect time from ~5-9s down to ~1-2s on blocked networks.
+- **CF staggered by 150ms**: CF connection starts 150ms after direct, because CF involves extra DNS resolution latency. On unblocked networks direct wins fast; on blocked networks CF wins seconds before direct would timeout.
+- **Reuses existing `cfproxyConnectOnly()`**: Extracted CF-only connection logic so both `raceConnection()` and `doFallback()` share the same connection code without duplication.
+- **CF-proven mode preserved**: Once 2+ CF successes accumulate, subsequent connections skip direct entirely (`CF proven active, skipping direct`), just like before.
+
+### Previously Fixed (beta1-beta3)
+- **Removed permanent CF-fallback lock-in** (CF_SUCCESS_THRESHOLD removed)
+- **CF-success decay** every 5 minutes via background cleanup
+- **Fixed broken WebSocket pool health check** (infinite blocking `recv()` → `!isClosed`)
+- **WebSocket read timeout** 70s (was infinite, caused thread leaks)
+- **Service restart robustness** (no double-restart loop)
+- **Hotfix**: restored missing `doFallback()` call after direct WS failure
 
 ---
 
@@ -19,9 +26,10 @@ See [CHANGELOG.md](https://github.com/ComradeSwarog/tg-ws-proxy-android/blob/bet
 ## How to Test
 1. Download `tg-ws-proxy-android-beta.apk` below.
 2. Transfer to your Android device and install.
-3. Start the proxy and leave it running for **1+ hours** (preferably on mobile data).
-4. Check that Telegram messages continue to send/receive without re-connecting to proxy.
-5. Share logs via **Logs tab → Share** if issues occur.
+3. **Test first connect**: enable proxy on mobile data (blocked network). Telegram should connect within **1-3 seconds** instead of 5-9.
+4. **Test reconnection**: close Telegram, reopen — should reconnect instantly.
+5. **Longevity**: leave running for 30+ min, verify no hangs.
+6. Share logs via **Logs tab → Share** if issues occur.
 
 ---
 
