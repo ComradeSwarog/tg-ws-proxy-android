@@ -63,4 +63,10 @@ class Balancer {
         }
         return result.iterator()
     }
+
+    @Synchronized
+    fun resetBlacklist() {
+        domainBlacklist.clear()
+        domainFailCount.clear()
+    }
 }

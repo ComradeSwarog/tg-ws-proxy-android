@@ -8,6 +8,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
@@ -59,16 +62,24 @@ class ProxyService : Service() {
         }
     )
     private var domainRefreshJob: Job? = null
+    private var wakeLockRefreshJob: Job? = null
     private val balancer = Balancer()
+
+    // Network change detection
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var lastNetworkChangeTime = 0L
+    private val networkChangeDebounceMs = 2_000L
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        registerNetworkCallback()
 
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             Log.e(TAG, "Uncaught exception on ${thread.name}: ${throwable.message}", throwable)
             if (throwable is OutOfMemoryError) {
-                Log.e(TAG, "OOM detected — graceful shutdown")
+                Log.e(TAG, "OOM detected \u2014 graceful shutdown")
                 stopProxy()
                 try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
             }
@@ -82,7 +93,7 @@ class ProxyService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand action=${intent?.action} startId=$startId flags=$flags")
-        
+
         // ALWAYS start foreground immediately to avoid ForegroundServiceDidNotStartInTimeException.
         // Android 12+ kills the service within 5s if startForeground() is not called.
         try {
@@ -93,7 +104,7 @@ class ProxyService : Service() {
             // If we can't start foreground, crash gracefully rather than get killed
             throw e
         }
-        
+
         when (intent?.action) {
             ACTION_START -> {
                 val cfg = loadConfig()
@@ -139,10 +150,73 @@ class ProxyService : Service() {
         Log.d(TAG, "onDestroy called")
         domainRefreshJob?.cancel()
         serviceScope.cancel()
+        unregisterNetworkCallback()
         // Prevent double restart: onTaskRemoved already schedules restart if needed.
         // onDestroy here only ensures clean shutdown of proxy and coroutines.
         stopProxy()
         super.onDestroy()
+    }
+
+    private fun registerNetworkCallback() {
+        try {
+            connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            networkCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    AppLogger.i(TAG, "Network available, triggering proxy recovery")
+                    onNetworkChanged()
+                }
+                override fun onLost(network: Network) {
+                    AppLogger.w(TAG, "Network lost")
+                }
+                override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                    AppLogger.i(TAG, "Network capabilities changed, triggering recovery")
+                    onNetworkChanged()
+                }
+            }
+            connectivityManager?.registerDefaultNetworkCallback(networkCallback!!)
+            AppLogger.i(TAG, "Network callback registered")
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Failed to register network callback: ${e.message}")
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        try {
+            networkCallback?.let { connectivityManager?.unregisterNetworkCallback(it) }
+            AppLogger.d(TAG, "Network callback unregistered")
+        } catch (_: Exception) {}
+    }
+
+    private fun onNetworkChanged() {
+        val now = System.currentTimeMillis()
+        if (now - lastNetworkChangeTime < networkChangeDebounceMs) return
+        lastNetworkChangeTime = now
+
+        if (!isProxyRunning) return
+
+        AppLogger.i(TAG, "Network changed \u2014 re-acquiring locks and resetting proxy state")
+        // Re-acquire WifiLock on new network interface
+        try {
+            if (wifiLock?.isHeld == true) wifiLock?.release()
+        } catch (_: Exception) {}
+        try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val wifiLockMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                @Suppress("DEPRECATION")
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            }
+            wifiLock = wm.createWifiLock(wifiLockMode, "TgWsProxy::WifiLock")
+            wifiLock?.acquire()
+            AppLogger.d(TAG, "WifiLock re-acquired on new network")
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Failed to re-acquire WifiLock: ${e.message}")
+        }
+        // Reset Balancer blacklist (domains may work on new network)
+        balancer.resetBlacklist()
+        // Trigger proxy-level recovery
+        proxy?.resetForNetworkChange()
     }
 
     private fun scheduleRestart() {
@@ -214,8 +288,6 @@ class ProxyService : Service() {
         // Start WakeLock refresh loop (25 min) to prevent Samsung expiring wakelocks
         startWakeLockRefreshLoop()
     }
-
-    private var wakeLockRefreshJob: Job? = null
 
     private fun startWakeLockRefreshLoop() {
         wakeLockRefreshJob?.cancel()

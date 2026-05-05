@@ -42,6 +42,7 @@ The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as 
 | **Pre-warmed CF Pool** | Background health-check before first real connection (< 3s cold-start) |
 | **Connection Pool** | Keep-alive pool with automatic refilling and age-based eviction |
 | **Deadlock-free TLS** | Separate thread pools for parallel connect and TLS handshakes — no thread pool deadlock |
+| **Auto Network Recovery** | Detects WiFi/mobile network switches and instantly resets stale state (cooldowns, pool, blacklist, WifiLock) |
 | **Foreground Service Hardening** | `dataSync` type + `WakeLock` + `WifiLock` — Samsung/Android 16 won't throttle network I/O after 30 min |
 | **WakeLock Refresh** | Re-acquires wake lock every 25 min before Samsung's timeout expires |
 | **In-app Logs** | Live log viewer with export to `.txt` (share or save to Downloads) |

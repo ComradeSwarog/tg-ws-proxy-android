@@ -109,6 +109,16 @@ class TgWsProxy(
 
     fun isRunning(): Boolean = running
 
+    fun resetForNetworkChange() {
+        AppLogger.i(TAG, "Network changed — resetting proxy state")
+        dcFailUntil.clear()
+        cfProvenUntil.clear()
+        cfSuccessCount.clear()
+        wsPool.reset()
+        scope.launch { wsPool.warmup(config.dcRedirects) }
+        scope.launch { prewarmCfPool() }
+    }
+
     private suspend fun acceptLoop() {
         val server = serverSocket ?: return
         val secretBytes = hexToBytes(config.secret)
@@ -552,8 +562,8 @@ class TgWsProxy(
                 try {
                     while (isActive()) {
                         val data = ws.recv() ?: break
-                        // PONG check reset
-                        if (data.isNotEmpty()) lastPong.set(true)
+                        // Any frame received means connection is alive (including empty PONG)
+                        lastPong.set(true)
                         stats.bytesDown.addAndGet(data.size.toLong()); downBytes += data.size
                         val plain = ctx.tgDec.update(data)
                         val encrypted = ctx.cltEnc.update(plain)

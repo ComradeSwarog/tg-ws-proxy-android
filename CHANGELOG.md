@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-04-24
+
+### Added
+- **Auto Network Recovery**: Detects WiFi/mobile network switches via `ConnectivityManager.NetworkCallback`. On network change: resets stale `dcFailUntil`/`cfProvenUntil` cooldowns, resets `cfSuccessCount`, purges stale `wsPool` connections, clears `Balancer` domain blacklist, re-acquires `WifiLock` on the new network interface. No more manual restart required after switching networks. (`ProxyService.kt`, `TgWsProxy.kt`, `Balancer.kt`)
+
+### Fixed
+- **Keepalive PONG false timeout**: Empty PONG frames from Telegram servers failed to reset `lastPong` because the old check required `data.isNotEmpty()`. Now ANY frame received (including empty PONG) resets the keepalive timer, preventing false disconnections. (`TgWsProxy.kt`)
+- **Slow socket timeout after network loss**: Reduced `sslSocket.soTimeout` from 70s to 35s so dead connections after network change are detected twice as fast, freeing threads sooner. (`RawWebSocket.kt`)
+
+### Documentation
+- Updated `README.md` Features table with Auto Network Recovery entry.
+- Updated `help_en.html` and `help_ru.html` with v1.6.1 release notes.
+
+### Internal
+- Bumped versionCode: 8 → 9, versionName: "1.6.0" → "1.6.1"
+
 ## [1.6.0] - 2026-04-24
 
 ### Added

@@ -332,7 +332,7 @@ class RawWebSocket private constructor(
                 // Prevent silent hangs from network changes / Doze: set a read timeout
                 // slightly above the keep-alive interval (25s) so a stalled socket
                 // is detected and threads are released instead of leaking.
-                sslSocket.soTimeout = 70_000
+                sslSocket.soTimeout = 35_000
                 AppLogger.i(logTag, "WS established $targetIp/$domain")
                 val result = RawWebSocket(sslSocket.getInputStream(), sslSocket.getOutputStream(), sslSocket)
                 plainSocket = null; sslSocket = null // ownership transferred
