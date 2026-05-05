@@ -1,35 +1,40 @@
 ## What's New
 
-### Auto Network Recovery (Critical)
+### Auto-Update: Download & Install from GitHub
 
-The proxy now **detects WiFi/mobile network switches** and instantly resets all stale state:
+The update checker now supports **one-tap download and install** of new APK versions directly from GitHub Releases:
 
-- Clears stale `dcFailUntil` and `cfProvenUntil` cooldowns
-- Purges stale WebSocket connection pool
-- Clears domain blacklist (domains may work on new network)
-- Re-acquires `WifiLock` on the new network interface
+- **Bypasses cache on manual check** — the "Check for update" button now always hits the API, never returns a stale cached result
+- **Downloads APK from release assets** — automatically finds the `.apk` file attached to the release
+- **Shows download progress** with percentage indicator
+- **Launches system package installer** via `FileProvider` once download completes
+- **Three-button dialog**: "Download & Install", "Open release page", "Later"
 
-No more "proxy stuck after switching WiFi" — recovery is automatic and instant.
+### Fixed
 
-### Keepalive PONG Fix
-
-Empty PONG frames from Telegram servers no longer cause false keepalive timeouts that disconnected active bridges. Any frame received now correctly resets the keepalive timer.
-
-### Faster Dead-Connection Detection
-
-`sslSocket.soTimeout` reduced from 70s to 35s — dead connections after network loss are detected twice as fast, freeing threads sooner.
+- **Update checker always returned cached result** — manual "Check for update" was blocked by the 1-hour cache. Now uses `force = true` to bypass cache on manual checks.
+- **APK download URL extraction** — added GitHub release assets parsing to get the direct APK download link.
 
 ---
 
-## Full Changelog (v1.6.0 → v1.6.1)
+## Technical Details
 
-- Added `ConnectivityManager.NetworkCallback` for network change detection
-- `onNetworkChange()` resets: `dcFailUntil`, `cfProvenUntil`, `cfSuccessCount`, `wsPool`, `Balancer.blacklist`, `WifiLock`
-- New `TgWsProxy.resetForNetworkChange()` method for proxy-level recovery
-- New `Balancer.resetBlacklist()` method
-- Fixed keepalive PONG: `lastPong.set(true)` on every frame (was only on `isNotEmpty()`)
-- Reduced `sslSocket.soTimeout` from 70s to 35s
-- Debounce network change events by 2s to avoid rapid repeated restarts
+- Added `REQUEST_INSTALL_PACKAGES` permission to `AndroidManifest.xml`
+- `FileProvider` uses `cache-path` for APK storage (already configured)
+- Download runs on a coroutine with `Dispatchers.IO`
+- Uses `java.net.HttpURLConnection` for download (no extra dependencies)
+
+---
+
+## Full Changelog (v1.6.1 → v1.6.2)
+
+- `UpdateChecker.check()` now accepts `force` parameter (manual checks bypass cache)
+- `UpdateChecker` extracts APK download URL from GitHub release assets
+- `MainActivity.showUpdateDialog()` — three buttons: Download, Open page, Later
+- `MainActivity.downloadAndInstallApk()` — streams APK to cache dir with progress dialog
+- `MainActivity.installApk()` — launches `ACTION_VIEW` intent via `FileProvider`
+- New string resources: `update_downloading`, `update_downloading_msg`, `update_download_error`, `update_install_error`, `update_open_page`, `update_download`
+- Updated EN and RU string resources
 
 ---
 
@@ -56,7 +61,7 @@ Empty PONG frames from Telegram servers no longer cause false keepalive timeouts
 
 | File | SHA-256 |
 |------|---------|
-| `tg-ws-proxy-android.apk` | `2AA6896863BBBE723B8485E381B7A2507DDF7D998C0F5DB083E595C9EF1CD84E` |
+| `tg-ws-proxy-android.apk` | `F54601BFEFBEA9D6DD268472E464D1F3CA74EFF56F15B324A0023E997102CE91` |
 
 ---
 
