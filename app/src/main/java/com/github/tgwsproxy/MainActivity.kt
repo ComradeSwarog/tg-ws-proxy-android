@@ -189,7 +189,7 @@ class MainActivity : AppCompatActivity() {
     // ---- Update checker ----
 
     private suspend fun performUpdateCheck(manual: Boolean) {
-        val result = UpdateChecker.check(this, getAppVersionName())
+        val result = UpdateChecker.check(this, getAppVersionName(), force = manual)
         runOnUiThread {
             if (result.error != null) {
                 if (manual) {
@@ -198,23 +198,108 @@ class MainActivity : AppCompatActivity() {
                 return@runOnUiThread
             }
             if (result.hasUpdate && result.latestVersion != null) {
-                showUpdateDialog(result.latestVersion, result.htmlUrl)
+                showUpdateDialog(result.latestVersion, result.htmlUrl, result.apkDownloadUrl)
             } else if (manual) {
                 Toast.makeText(this, getString(R.string.update_latest), Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    private fun showUpdateDialog(version: String, url: String?) {
-        AlertDialog.Builder(this)
+    private fun showUpdateDialog(version: String, url: String?, apkUrl: String?) {
+        val builder = AlertDialog.Builder(this)
             .setTitle(R.string.update_title)
             .setMessage(getString(R.string.update_message, version))
-            .setPositiveButton(R.string.update_yes) { _, _ ->
+            .setNegativeButton(R.string.update_no, null)
+
+        // If APK download URL available, add "Download & Install" button
+        if (apkUrl != null) {
+            builder.setPositiveButton(R.string.update_download) { _, _ ->
+                downloadAndInstallApk(apkUrl, version)
+            }
+            builder.setNeutralButton(R.string.update_open_page) { _, _ ->
                 val link = url ?: "https://github.com/ComradeSwarog/tg-ws-proxy-android/releases/latest"
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
             }
-            .setNegativeButton(R.string.update_no, null)
-            .show()
+        } else {
+            builder.setPositiveButton(R.string.update_yes) { _, _ ->
+                val link = url ?: "https://github.com/ComradeSwarog/tg-ws-proxy-android/releases/latest"
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
+            }
+        }
+
+        builder.show()
+    }
+
+    private fun downloadAndInstallApk(apkUrl: String, version: String) {
+        val progress = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.update_downloading))
+            .setMessage(getString(R.string.update_downloading_msg, version))
+            .setCancelable(false)
+            .create()
+        progress.show()
+
+        lifecycleScope.launch {
+            try {
+                val file = File(cacheDir, "update-${version}.apk")
+                val url = java.net.URL(apkUrl)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 30000
+                conn.readTimeout = 120000
+                conn.setRequestProperty("User-Agent", "tg-ws-proxy-android")
+                if (conn.responseCode != 200) {
+                    throw Exception("HTTP ${conn.responseCode}")
+                }
+                val total = conn.contentLength
+                conn.inputStream.use { input ->
+                    FileOutputStream(file).use { output ->
+                        val buf = ByteArray(8192)
+                        var downloaded = 0L
+                        var n: Int
+                        while (input.read(buf).also { n = it } > 0) {
+                            output.write(buf, 0, n)
+                            downloaded += n
+                            if (total > 0) {
+                                runOnUiThread {
+                                    progress.setMessage(
+                                        getString(R.string.update_downloading_msg, version) +
+                                        "\n" + (100L * downloaded / total) + "%"
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                conn.disconnect()
+
+                runOnUiThread {
+                    progress.dismiss()
+                    installApk(file)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    progress.dismiss()
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.update_download_error, e.message ?: ""),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun installApk(file: File) {
+        val uri = FileProvider.getUriForFile(this, "${packageName}.provider", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, getString(R.string.update_install_error, e.message ?: ""), Toast.LENGTH_LONG).show()
+        }
     }
 
     // ---- Proxy control ----

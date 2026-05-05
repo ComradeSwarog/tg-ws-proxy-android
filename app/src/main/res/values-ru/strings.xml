@@ -62,12 +62,18 @@
     <!-- Update checker -->
     <string name="btn_check_update">Проверить обновление</string>
     <string name="update_title">Доступно обновление</string>
-    <string name="update_message">Версия %s уже вышла. Открыть страницу релиза?</string>
+    <string name="update_message">Версия %s уже вышла. Что делаем?</string>
     <string name="update_yes">Открыть</string>
+    <string name="update_open_page">Страница релиза</string>
+    <string name="update_download">Скачать и установить</string>
     <string name="update_no">Позже</string>
     <string name="update_dont_ask">Больше не проверять автоматически</string>
     <string name="update_latest">У вас последняя версия</string>
     <string name="update_check_error">Не удалось проверить обновление: %s</string>
+    <string name="update_downloading">Загрузка обновления…</string>
+    <string name="update_downloading_msg">Загрузка версии %s…</string>
+    <string name="update_download_error">Ошибка загрузки: %s</string>
+    <string name="update_install_error">Ошибка установки: %s</string>
     <string name="toast_settings_saved">Настройки сохранены</string>
     <string name="toast_enter_host">Укажите IP-адрес</string>
     <string name="toast_port_range">Порт должен быть числом 1-65535</string>

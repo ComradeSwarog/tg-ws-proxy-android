@@ -12,12 +12,14 @@ import java.net.URL
 /**
  * Checks GitHub Releases API for newer stable versions.
  * Rate-limited to 1 request/hour; uses ETag; caches the last check.
+ * Use [force = true] to bypass cache for manual checks.
  */
 object UpdateChecker {
     private const val PREF_LAST_CHECK_TIME = "update_last_check"
     private const val PREF_ETAG = "update_etag"
     private const val PREF_CACHED_TAG = "update_cached_tag"
     private const val PREF_CACHED_URL = "update_cached_url"
+    private const val PREF_CACHED_APK_URL = "update_cached_apk_url"
     private const val PREF_DONT_AUTO_CHECK = "update_dont_auto_check"
 
     private const val REPO = "ComradeSwarog/tg-ws-proxy-android"
@@ -29,6 +31,7 @@ object UpdateChecker {
         val hasUpdate: Boolean,
         val latestVersion: String?,
         val htmlUrl: String?,
+        val apkDownloadUrl: String? = null,
         val error: String? = null
     )
 
@@ -42,22 +45,16 @@ object UpdateChecker {
             .edit().putBoolean(PREF_DONT_AUTO_CHECK, !enabled).apply()
     }
 
-    fun setDontAutoCheck(context: Context, enabled: Boolean) {
-        PreferenceManager.getDefaultSharedPreferences(context)
-            .edit().putBoolean(PREF_DONT_AUTO_CHECK, enabled).apply()
-    }
-
     /**
-     * Check for updates. If too soon, return cached result without network call.
-     * If 304 Not Modified, use cached tag.
+     * Check for updates. Pass [force] = true to bypass cache (manual check).
      */
-    suspend fun check(context: Context, currentVersion: String): CheckResult =
+    suspend fun check(context: Context, currentVersion: String, force: Boolean = false): CheckResult =
         withContext(Dispatchers.IO) {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
             val now = System.currentTimeMillis()
             val lastCheck = prefs.getLong(PREF_LAST_CHECK_TIME, 0)
 
-            if (now - lastCheck < MIN_INTERVAL_MS) {
+            if (!force && now - lastCheck < MIN_INTERVAL_MS) {
                 val cachedTag = prefs.getString(PREF_CACHED_TAG, null)
                 return@withContext evaluate(cachedTag, currentVersion, prefs)
             }
@@ -72,7 +69,7 @@ object UpdateChecker {
                 connection.readTimeout = 12000
                 connection.setRequestProperty("Accept", "application/vnd.github+json")
                 connection.setRequestProperty("User-Agent", "tg-ws-proxy-android")
-                if (!etag.isNullOrEmpty()) {
+                if (!force && !etag.isNullOrEmpty()) {
                     connection.setRequestProperty("If-None-Match", etag)
                 }
 
@@ -88,7 +85,7 @@ object UpdateChecker {
                 if (code != 200) {
                     return@withContext CheckResult(
                         false, null, null,
-                        "HTTP $code"
+                        error = "HTTP $code"
                     )
                 }
 
@@ -98,17 +95,32 @@ object UpdateChecker {
                 val htmlUrl = json.optString("html_url", RELEASES_PAGE_URL).trim()
                     .ifEmpty { RELEASES_PAGE_URL }
 
+                // Extract APK download URL from release assets
+                val assets = json.optJSONArray("assets")
+                var apkUrl: String? = null
+                if (assets != null) {
+                    for (i in 0 until assets.length()) {
+                        val asset = assets.getJSONObject(i)
+                        val name = asset.optString("name", "")
+                        if (name.endsWith(".apk")) {
+                            apkUrl = asset.optString("browser_download_url", "").takeIf { it.isNotEmpty() }
+                            break
+                        }
+                    }
+                }
+
                 prefs.edit()
                     .putLong(PREF_LAST_CHECK_TIME, now)
                     .putString(PREF_ETAG, newEtag)
                     .putString(PREF_CACHED_TAG, tag)
                     .putString(PREF_CACHED_URL, htmlUrl)
+                    .putString(PREF_CACHED_APK_URL, apkUrl)
                     .apply()
 
                 evaluate(tag, currentVersion, prefs)
             } catch (e: Exception) {
                 prefs.edit().putLong(PREF_LAST_CHECK_TIME, now).apply()
-                CheckResult(false, null, null, e.message)
+                CheckResult(false, null, null, error = e.message)
             } finally {
                 connection?.disconnect()
             }
@@ -123,14 +135,14 @@ object UpdateChecker {
         val hasUpdate = versionGreaterThan(cleanTag, cleanCurrent)
         val url = prefs.getString(PREF_CACHED_URL, RELEASES_PAGE_URL)
             ?: RELEASES_PAGE_URL
+        val apkUrl = prefs.getString(PREF_CACHED_APK_URL, null)
         // Only report if remote version is strictly greater (not a pre-release or beta)
-        return CheckResult(hasUpdate && !cleanTag.contains("beta", true) && !cleanTag.contains("alpha", true), tag, url)
+        return CheckResult(
+            hasUpdate && !cleanTag.contains("beta", true) && !cleanTag.contains("alpha", true),
+            tag, url, apkUrl
+        )
     }
 
-    /**
-     * Simple tuple-based version comparison.
-     * "1.3.0" > "1.2.5" = true; "1.2.0" > "1.2.0" = false
-     */
     private fun versionGreaterThan(a: String, b: String): Boolean {
         val pa = a.split(".")
         val pb = b.split(".")
