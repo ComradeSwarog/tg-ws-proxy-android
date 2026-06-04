@@ -49,6 +49,10 @@ class RawWebSocket private constructor(
         // DoH endpoint rotation (controlled by TgWsProxy config)
         @JvmField var dohRotationEnabled = true
 
+        // Last WS handshake response (for redirect-aware failure handling)
+        @JvmField var lastStatusCode: Int = 0
+        @JvmField var lastWasRedirect: Boolean = false
+
         /** Length-prefix frame padding helpers (testable via static fields) */
         internal fun encodePaddedPayload(data: ByteArray): ByteArray {
             if (!framePaddingEnabled) return data
@@ -325,7 +329,9 @@ class RawWebSocket private constructor(
                 AppLogger.d(logTag, "WS response: status=$statusCode line=$firstLine")
 
                 if (statusCode != 101) {
-                    AppLogger.w(logTag, "WS handshake rejected: status=$statusCode for $targetIp/$domain")
+                    lastStatusCode = statusCode
+                    lastWasRedirect = statusCode in listOf(301, 302, 303, 307, 308)
+                    AppLogger.w(logTag, "WS handshake rejected: status=$statusCode for $targetIp/$domain redirect=$lastWasRedirect")
                     sslSocket.close(); plainSocket = null; sslSocket = null
                     return null
                 }

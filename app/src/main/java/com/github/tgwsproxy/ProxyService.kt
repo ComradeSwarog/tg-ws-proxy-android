@@ -213,8 +213,6 @@ class ProxyService : Service() {
         } catch (e: Exception) {
             AppLogger.w(TAG, "Failed to re-acquire WifiLock: ${e.message}")
         }
-        // Reset Balancer blacklist (domains may work on new network)
-        balancer.resetBlacklist()
         // Trigger proxy-level recovery
         proxy?.resetForNetworkChange()
     }

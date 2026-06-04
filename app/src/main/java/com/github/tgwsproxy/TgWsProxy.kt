@@ -32,7 +32,7 @@ class TgWsProxy(
 ) {
     companion object {
         private const val TAG = "TgWsProxy"
-    private const val DC_FAIL_COOLDOWN = 60_000L
+    private const val DC_FAIL_COOLDOWN = 30_000L
     private const val WS_FAIL_TIMEOUT = 2_000L
     private const val WS_POOL_MAX_AGE = 120_000L
     private const val KEEPALIVE_INTERVAL_MS = 25_000L
@@ -114,6 +114,7 @@ class TgWsProxy(
         dcFailUntil.clear()
         cfProvenUntil.clear()
         cfSuccessCount.clear()
+        wsBlacklist.clear()
         wsPool.reset()
         scope.launch { wsPool.warmup(config.dcRedirects) }
         scope.launch { prewarmCfPool() }
@@ -190,7 +191,10 @@ class TgWsProxy(
             val dcKey = "$dc${if (isMedia) "m" else ""}"
             val splitter = try { MsgSplitter(relayInit, protoInt) } catch (e: Exception) { null }
 
-            if (dc !in config.dcRedirects) {
+            if (dc !in config.dcRedirects || dcKey in wsBlacklist) {
+                if (dcKey in wsBlacklist) {
+                    AppLogger.i(TAG, "[$label] DC$dc${if (isMedia) " media" else ""} -> WS blacklisted, going to fallback")
+                }
                 doFallback(cltInput, cltOutput, relayInit, label, dc, isMedia, ctx, splitter)
                 return
             }
@@ -271,10 +275,9 @@ class TgWsProxy(
                     AppLogger.i(TAG, "CF prewarm OK: DC$dc via $baseDomain")
                     return
                 } else {
-                    balancer.markDomainFailed(baseDomain, baseTtlMs = 60_000L)
-                    AppLogger.d(TAG, "CF prewarm rejected $baseDomain, blacklisted 1min")
+                    AppLogger.d(TAG, "CF prewarm rejected $baseDomain")
                 }
-            } catch (_: Exception) { balancer.markDomainFailed(baseDomain, baseTtlMs = 60_000L) }
+            } catch (_: Exception) { AppLogger.d(TAG, "CF prewarm exception for $baseDomain") }
         }
         AppLogger.d(TAG, "CF prewarm failed for DC$dc")
     }
@@ -312,9 +315,8 @@ class TgWsProxy(
 
     private fun connectRawWsEnhanced(targetIp: String, domains: List<String>, timeout: Long, dc: Int, isMedia: Boolean, label: String, forFallback: Boolean = false): RawWebSocket? {
         val dcKey = "$dc${if (isMedia) "m" else ""}"
-        // Use the passed timeout (already adjusted by caller based on failUntil)
         val tmo = timeout.coerceIn(2000, 8000)
-        // 1. Standard connect with DoH + parallel IPs (fast single attempt)
+        var anyRedirect = false
         for (domain in domains) {
             AppLogger.d(TAG, "[$label] DC$dc connecting directly to $domain, timeout=$tmo")
             val ws = RawWebSocket.connect(
@@ -324,8 +326,12 @@ class TgWsProxy(
                 retryMax = 1
             )
             if (ws != null) return ws
+            if (RawWebSocket.lastWasRedirect) anyRedirect = true
+            val code = RawWebSocket.lastStatusCode
             stats.wsErrors.incrementAndGet()
+            AppLogger.w(TAG, "[$label] DC$dc WS handshake failed: status=$code redirect=${RawWebSocket.lastWasRedirect} for $domain")
         }
+        RawWebSocket.lastWasRedirect = anyRedirect
 
         // 2. If direct IP blocked, try DoH-resolved IP with SNI from domain
         if (config.autoFakeTls || config.fakeTlsDomain.isNotEmpty()) {
@@ -720,13 +726,11 @@ class TgWsProxy(
                     balancer.updateDomainForDc(dc, baseDomain)
                     return Triple(true, ws, baseDomain)
                 } else {
-                    balancer.markDomainFailed(baseDomain, baseTtlMs = 120_000L)
-                    AppLogger.w(TAG, "[$label] DC$dc CF proxy rejected/hit rate-limit by $baseDomain, blacklisted 2min")
+                    AppLogger.w(TAG, "[$label] DC$dc CF proxy rejected by $baseDomain (status=${RawWebSocket.lastStatusCode})")
                 }
             } catch (_: CancellationException) { return null }
             catch (e: Exception) {
                 AppLogger.w(TAG, "[$label] DC$dc CF proxy failed: ${e.message}")
-                balancer.markDomainFailed(baseDomain)
             }
         }
         return null
@@ -804,17 +808,13 @@ class TgWsProxy(
                     bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
                     return true
                 } else {
-                    // WS establishment succeeded but handshake was rejected (429, 403, etc.)
-                    // Treat as a soft-failure with shorter blacklist TTL to avoid hammering
-                    balancer.markDomainFailed(baseDomain, baseTtlMs = 120_000L)
-                    AppLogger.w(TAG, "[$label] DC$dc CF proxy rejected/hit rate-limit by $baseDomain, blacklisted 2min")
+                    AppLogger.w(TAG, "[$label] DC$dc CF proxy rejected by $baseDomain (status=${RawWebSocket.lastStatusCode})")
                 }
             } catch (e: CancellationException) {
                 AppLogger.d(TAG, "[$label] DC$dc CF fallback cancelled")
                 return false
             } catch (e: Exception) {
                 AppLogger.w(TAG, "[$label] DC$dc CF proxy failed: ${e.message}")
-                balancer.markDomainFailed(baseDomain)
             }
         }
         return false
