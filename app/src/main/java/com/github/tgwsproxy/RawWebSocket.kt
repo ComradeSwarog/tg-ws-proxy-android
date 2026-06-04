@@ -89,14 +89,16 @@ class RawWebSocket private constructor(
             timeoutMs: Long = 8000,
             useDoH: Boolean = true,
             dohEndpoints: List<String> = ProxyConfig().dohEndpoints,
-            retryMax: Int = CONNECT_RETRY_MAX
+            retryMax: Int = CONNECT_RETRY_MAX,
+            path: String? = null
         ): RawWebSocket? {
+            val wsPath = path ?: "/apiws"
             for (attempt in 1..retryMax) {
                 val delay = if (attempt == 1) 0L else CONNECT_BASE_DELAY_MS * (1 shl (attempt - 2))
                 if (delay > 0) {
                     try { Thread.sleep(delay) } catch (_: InterruptedException) {}
                 }
-                val ws = tryConnectOnce(targetIp, domain, timeoutMs, useDoH, dohEndpoints, attempt)
+                val ws = tryConnectOnce(targetIp, domain, timeoutMs, useDoH, dohEndpoints, attempt, wsPath)
                 if (ws != null) return ws
             }
             return null
@@ -108,7 +110,8 @@ class RawWebSocket private constructor(
             timeoutMs: Long,
             useDoH: Boolean,
             dohEndpoints: List<String>,
-            attempt: Int
+            attempt: Int,
+            wsPath: String
         ): RawWebSocket? {
             val logTag = "RawWS"
             val addrsToTry = mutableListOf<String>()
@@ -142,14 +145,14 @@ class RawWebSocket private constructor(
             val finalAddrs = addrsToTry.distinct()
 
             return if (finalAddrs.size == 1) {
-                connectSingle(finalAddrs[0], domain, timeoutMs, attempt)
+                connectSingle(finalAddrs[0], domain, timeoutMs, attempt, wsPath)
             } else {
-                connectParallel(finalAddrs, domain, timeoutMs, attempt)
+                connectParallel(finalAddrs, domain, timeoutMs, attempt, wsPath)
             }
         }
 
-        private fun connectSingle(addr: String, domain: String, timeoutMs: Long, attempt: Int): RawWebSocket? {
-            return rawConnect(addr, domain, timeoutMs, null).also {
+        private fun connectSingle(addr: String, domain: String, timeoutMs: Long, attempt: Int, wsPath: String): RawWebSocket? {
+            return rawConnect(addr, domain, timeoutMs, null, wsPath).also {
                 if (it != null) AppLogger.i("RawWS", "[attempt $attempt] Connected via single path: $addr -> $domain")
             }
         }
@@ -174,7 +177,7 @@ class RawWebSocket private constructor(
          * Parallel connect to multiple IPs; returns first successful.
          * Losing threads have their partially-opened sockets closed to prevent FD leaks.
          */
-        private fun connectParallel(addrs: List<String>, domain: String, timeoutMs: Long, attempt: Int): RawWebSocket? {
+        private fun connectParallel(addrs: List<String>, domain: String, timeoutMs: Long, attempt: Int, wsPath: String): RawWebSocket? {
             if (addrs.isEmpty()) return null
             val done = CountDownLatch(1)
             val winner = AtomicReference<RawWebSocket?>(null)
@@ -189,7 +192,7 @@ class RawWebSocket private constructor(
                 val future = connectExecutor.submit {
                     if (finished.get()) return@submit
                     try {
-                        val ws = rawConnect(addr, domain, timeoutMs, allSockets)
+                        val ws = rawConnect(addr, domain, timeoutMs, allSockets, wsPath)
                         if (ws != null) allWs[Thread.currentThread()] = ws
                         if (ws != null && winner.compareAndSet(null, ws)) {
                             finished.set(true)
@@ -224,7 +227,7 @@ class RawWebSocket private constructor(
             return if (ok) winner.get() else null
         }
 
-        private fun rawConnect(targetIp: String, domain: String, timeoutMs: Long, threadSocketMap: java.util.concurrent.ConcurrentHashMap<Thread, Socket>? = null): RawWebSocket? {
+        private fun rawConnect(targetIp: String, domain: String, timeoutMs: Long, threadSocketMap: java.util.concurrent.ConcurrentHashMap<Thread, Socket>? = null, wsPath: String = "/apiws"): RawWebSocket? {
             val logTag = "RawWS"
             var plainSocket: Socket? = null
             var sslSocket: SSLSocket? = null
@@ -288,7 +291,7 @@ class RawWebSocket private constructor(
                 // 3. WebSocket upgrade request
                 val wsKey = Base64Encoder.encode(SecureRandom().generateSeed(16))
                 val request = (
-                    "GET /apiws HTTP/1.1\r\n" +
+                    "GET $wsPath HTTP/1.1\r\n" +
                     "Host: $domain\r\n" +
                     "Upgrade: websocket\r\n" +
                     "Connection: Upgrade\r\n" +

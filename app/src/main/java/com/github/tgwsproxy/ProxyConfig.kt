@@ -12,8 +12,8 @@ data class ProxyConfig(
     var bufferSize: Int = 256 * 1024,
     var poolSize: Int = 4,
     var fallbackCfproxy: Boolean = true,
-    var fallbackCfproxyPriority: Boolean = true,
-    var cfproxyUserDomain: String = "",
+    var cfproxyUserDomains: List<String> = emptyList(),
+    var cfproxyWorkerDomains: List<String> = emptyList(),
     var fakeTlsDomain: String = "",
     // --- DPI bypass: WS frame padding ---
     var wsFramePadding: Boolean = false,
@@ -47,10 +47,23 @@ data class ProxyConfig(
             203 to "91.105.192.100"
         )
 
-        // Encoded CF proxy domains (from original project)
+        // Encoded CF proxy domains — updated to match upstream v1.7.2
         private val _CFPROXY_ENC = listOf(
-            "virkgj.com", "vmmzovy.com", "mkuosckvso.com",
-            "zaewayzmplad.com", "twdmbzcm.com"
+            "virkgj.com",
+            "vmmzovy.com",
+            "mkuosckvso.com",
+            "zaewayzmplad.com",
+            "twdmbzcm.com",
+            "awzwsldi.com",
+            "clngqrflngqin.com",
+            "tjacxbqtj.com",
+            "bxaxtxmrw.com",
+            "dmohrsgmohcrwb.com",
+            "vwbmtmoi.com",
+            "khgrre.com",
+            "ulihssf.com",
+            "tmhqsdqmfpmk.com",
+            "xwuwoqbm.com"
         )
         private val _S = String(intArrayOf(46, 99, 111, 46, 117, 107).map { it.toChar() }.toCharArray())
 
@@ -70,5 +83,41 @@ data class ProxyConfig(
 
         const val CFPROXY_DOMAINS_URL =
             "https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt"
+
+        fun coerceDomainList(value: Any?): List<String> {
+            val items = when (value) {
+                is String -> value.replace(",", " ").replace(";", " ").split("\\s+".toRegex())
+                is List<*> -> value.flatMap {
+                    when (it) {
+                        is String -> it.replace(",", " ").replace(";", " ").split("\\s+".toRegex())
+                        else -> emptyList()
+                    }
+                }
+                else -> return emptyList()
+            }
+            val seen = LinkedHashSet<String>()
+            for (item in items) {
+                val trimmed = item.trim()
+                if (trimmed.isNotEmpty() && _isValidDomain(trimmed)) {
+                    seen.add(trimmed.lowercase())
+                }
+            }
+            return seen.toList()
+        }
+
+        private fun _isValidDomain(domain: String): Boolean {
+            if (domain.isEmpty() || domain.length > 253) return false
+            if (domain.startsWith(".") || domain.endsWith(".")) return false
+            val labels = domain.split(".")
+            if (labels.size < 2) return false
+            for (label in labels) {
+                if (label.isEmpty() || label.length > 63) return false
+                if (label[0] == '-' || label.last() == '-') return false
+                if (!label.all { it.isLetterOrDigit() || it == '-' }) return false
+            }
+            val tld = labels.last()
+            if (tld.length < 2 || !tld.any { it.isLetter() }) return false
+            return true
+        }
     }
 }

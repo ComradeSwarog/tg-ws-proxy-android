@@ -299,7 +299,7 @@ class ProxyService : Service() {
 
     private fun startDomainRefresh(cfg: ProxyConfig) {
         domainRefreshJob?.cancel()
-        if (!cfg.fallbackCfproxy || cfg.cfproxyUserDomain.isNotEmpty()) return
+        if (!cfg.fallbackCfproxy || cfg.cfproxyUserDomains.isNotEmpty()) return
         domainRefreshJob = serviceScope.launch {
             while (isActive) {
                 refreshCfproxyDomains()
@@ -411,8 +411,8 @@ class ProxyService : Service() {
         val port = prefs.getInt("port", 1443)
         val dcIpRaw = prefs.getString("dc_ip", "2:149.154.167.220\n4:149.154.167.220") ?: "2:149.154.167.220\n4:149.154.167.220"
         val cfproxy = prefs.getBoolean("cfproxy", true)
-        val cfproxyPriority = prefs.getBoolean("cfproxy_priority", true)
-        val cfproxyUserDomain = prefs.getString("cfproxy_user_domain", "") ?: ""
+        val cfproxyUserDomainRaw = prefs.getString("cfproxy_user_domain", "")
+        val cfproxyWorkerDomainRaw = prefs.getString("cfproxy_worker_domain", "")
         val fakeTlsDomain = prefs.getString("fake_tls_domain", "") ?: ""
         val poolSize = prefs.getInt("pool_size", 4)
 
@@ -437,8 +437,8 @@ class ProxyService : Service() {
             dcRedirects = dcRedirects,
             poolSize = poolSize,
             fallbackCfproxy = cfproxy,
-            fallbackCfproxyPriority = cfproxyPriority,
-            cfproxyUserDomain = cfproxyUserDomain,
+            cfproxyUserDomains = ProxyConfig.coerceDomainList(cfproxyUserDomainRaw),
+            cfproxyWorkerDomains = ProxyConfig.coerceDomainList(cfproxyWorkerDomainRaw),
             fakeTlsDomain = fakeTlsDomain,
             useDoH = prefs.getBoolean("use_doh", true),
             keepAliveIntervalMs = prefs.getLong("keepalive_ms", 30_000),

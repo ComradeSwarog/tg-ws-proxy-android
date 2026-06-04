@@ -51,6 +51,7 @@ class TgWsProxy(
     private val cfSuccessCount = ConcurrentHashMap<String, Int>()
     private val balancer: Balancer = sharedBalancer ?: Balancer()
     private val wsPool = WsPool()
+    private val cfWorkerPool = CfWorkerPool()
 
     fun start() {
         if (running) return
@@ -77,13 +78,18 @@ class TgWsProxy(
         AppLogger.i(TAG, "Config: host=${config.host} port=${config.port} fakeTls=${config.fakeTlsDomain} cfproxy=${config.fallbackCfproxy} pool=${config.poolSize}")
         AppLogger.i(TAG, "DC redirects: ${config.dcRedirects}")
         if (config.fallbackCfproxy) {
-            if (config.cfproxyUserDomain.isNotEmpty()) {
-                balancer.updateDomainsList(listOf(config.cfproxyUserDomain))
+            val userDomains = config.cfproxyUserDomains
+            if (userDomains.isNotEmpty()) {
+                balancer.updateDomainsList(userDomains)
             } else {
                 if (sharedBalancer == null) {
                     balancer.updateDomainsList(ProxyConfig.CFPROXY_DEFAULT_DOMAINS)
                 }
             }
+        }
+        cfWorkerPool.reset()
+        if (config.cfproxyWorkerDomains.isNotEmpty()) {
+            scope.launch { cfWorkerPool.warmup() }
         }
         serverJob = scope.launch { acceptLoop() }
         scope.launch { wsPool.warmup(config.dcRedirects) }
@@ -437,6 +443,85 @@ class TgWsProxy(
         }
     }
 
+    // ── CF Worker Connection Pool ─────────────────────────────────
+
+    private inner class CfWorkerPool {
+        private val idle = ConcurrentHashMap<Pair<Int, String>, LinkedBlockingDeque<Pair<RawWebSocket, Long>>>()
+        private val refilling = ConcurrentHashMap<Pair<Int, String>, Boolean>()
+        private val refillExecutor = java.util.concurrent.Executors.newFixedThreadPool(4)
+
+        fun get(dc: Int, workerDomain: String, fallbackDst: String): RawWebSocket? {
+            val key = Pair(dc, workerDomain)
+            val bucket = idle[key] ?: return null.also { scheduleRefill(key, fallbackDst) }
+            val now = System.currentTimeMillis()
+            while (true) {
+                val pooled = bucket.poll() ?: break
+                val age = now - pooled.second
+                if (age > WS_POOL_MAX_AGE || pooled.first.isClosed) {
+                    try { pooled.first.close() } catch (_: Exception) {}
+                    continue
+                }
+                stats.poolHits.incrementAndGet()
+                scheduleRefill(key, fallbackDst)
+                return pooled.first
+            }
+            stats.poolMisses.incrementAndGet()
+            scheduleRefill(key, fallbackDst)
+            return null
+        }
+
+        private fun scheduleRefill(key: Pair<Int, String>, fallbackDst: String) {
+            if (refilling.putIfAbsent(key, true) != null) return
+            scope.launch {
+                try { refill(key, fallbackDst) }
+                finally { refilling.remove(key) }
+            }
+        }
+
+        private fun refill(key: Pair<Int, String>, fallbackDst: String) {
+            val (dc, workerDomain) = key
+            val bucket = idle.getOrPut(key) { LinkedBlockingDeque() }
+            val needed = config.poolSize - bucket.size
+            if (needed <= 0) return
+            val query = "dst=${java.net.URLEncoder.encode(fallbackDst, "UTF-8")}&dc=$dc"
+            val wsPath = "/apiws?$query"
+            for (i in 0 until needed) {
+                refillExecutor.submit {
+                    val ws = RawWebSocket.connect(
+                        workerDomain, workerDomain, 8_000,
+                        useDoH = config.useDoH,
+                        dohEndpoints = config.dohEndpoints,
+                        retryMax = 1,
+                        path = wsPath
+                    )
+                    if (ws != null) {
+                        bucket.put(Pair(ws, System.currentTimeMillis()))
+                    }
+                }
+            }
+        }
+
+        fun warmup() {
+            val workerDomains = config.cfproxyWorkerDomains
+            if (workerDomains.isEmpty()) return
+            val dcList = config.dcRedirects.keys.toList().ifEmpty { listOf(2, 4) }
+            for (dc in dcList) {
+                val fallbackDst = ProxyConfig.DC_DEFAULT_IPS[dc] ?: continue
+                for (workerDomain in workerDomains) {
+                    scheduleRefill(Pair(dc, workerDomain), fallbackDst)
+                }
+            }
+            AppLogger.i(TAG, "CF worker pool warmup started for ${dcList.size} DC(s)")
+        }
+
+        fun reset() {
+            for ((_, bucket) in idle) {
+                for (pooled in bucket) { try { pooled.first.close() } catch (_: Exception) {} }
+            }
+            idle.clear(); refilling.clear()
+        }
+    }
+
     // ── Handshake & Crypto ─────────────────────────────────────────
 
     private data class HandshakeResult(val dc: Int, val isMedia: Boolean, val protoTag: ByteArray, val clientDecPrekeyIv: ByteArray)
@@ -739,50 +824,117 @@ class TgWsProxy(
     private suspend fun doFallback(cltInput: InputStream, cltOutput: OutputStream, relayInit: ByteArray, label: String, dc: Int, isMedia: Boolean, ctx: CryptoCtx, splitter: MsgSplitter?) {
         val fallbackDst = ProxyConfig.DC_DEFAULT_IPS[dc]
         val useCf = config.fallbackCfproxy || config.mediaViaCf
-        val cfFirst = config.fallbackCfproxyPriority
+        val workerDomains = config.cfproxyWorkerDomains
+        val mediaTag = if (isMedia) " media" else ""
 
-        if (!config.parallelConnect || (!useCf || fallbackDst == null)) {
-            // Sequential fallback
-            val methods = mutableListOf<String>()
-            if (useCf && cfFirst) methods.add("cf")
-            if (fallbackDst != null) methods.add("tcp")
-            if (useCf && !cfFirst) methods.add("cf")
-            for (method in methods) {
-                if (method == "cf") {
-                    if (cfproxyFallback(cltInput, cltOutput, relayInit, label, ctx, dc, isMedia, splitter)) return
-                } else if (method == "tcp" && fallbackDst != null) {
-                    if (tcpFallback(cltInput, cltOutput, fallbackDst, 443, relayInit, ctx)) return
-                }
-            }
-        } else {
-            // Parallel fallback: try CF and TCP at the same time, use first success
-            // Short-cut: if CF already proven to work for this DC, skip TCP entirely
-            // CF is now always tried alongside direct; we no longer skip direct permanently
+        val methods = mutableListOf<String>()
+        if (workerDomains.isNotEmpty() && fallbackDst != null) methods.add("worker")
+        if (useCf) methods.add("cf")
+        if (fallbackDst != null) methods.add("tcp")
+
+        if (config.parallelConnect && methods.size > 1) {
+            // Parallel fallback — try CF worker and CF proxy concurrently
+            val workerDone = AtomicBoolean(false)
             val cfDone = AtomicBoolean(false)
             val tcpDone = AtomicBoolean(false)
             val winner = AtomicBoolean(false)
-            AppLogger.i(TAG, "[$label] DC$dc parallel fallback: CF + TCP")
+            AppLogger.i(TAG, "[$label] DC$dc$mediaTag parallel fallback: ${methods.joinToString("+")}")
 
-            val cfJob = scope.launch(Dispatchers.IO) {
-                if (winner.get()) return@launch
-                if (cfproxyFallback(cltInput, cltOutput, relayInit, label, ctx, dc, isMedia, splitter)) {
-                    cfDone.set(true)
-                    winner.set(true)
+            val workerJob = if (workerDomains.isNotEmpty() && fallbackDst != null) {
+                scope.launch(Dispatchers.IO) {
+                    if (winner.get()) return@launch
+                    if (cfWorkerFallback(cltInput, cltOutput, relayInit, label, ctx, dc, isMedia, fallbackDst!!, splitter)) {
+                        workerDone.set(true); winner.set(true)
+                    }
                 }
-            }
+            } else null
+
+            val cfJob = if (useCf) {
+                scope.launch(Dispatchers.IO) {
+                    if (winner.get()) return@launch
+                    if (cfproxyFallback(cltInput, cltOutput, relayInit, label, ctx, dc, isMedia, splitter)) {
+                        cfDone.set(true); winner.set(true)
+                    }
+                }
+            } else null
+
             val tcpJob = scope.launch(Dispatchers.IO) {
-                delay(200)
+                delay(250)
                 if (winner.get()) return@launch
-                if (tcpFallback(cltInput, cltOutput, fallbackDst!!, 443, relayInit, ctx)) {
-                    tcpDone.set(true)
-                    winner.set(true)
+                if (fallbackDst != null && tcpFallback(cltInput, cltOutput, fallbackDst, 443, relayInit, ctx)) {
+                    tcpDone.set(true); winner.set(true)
                 }
             }
-            cfJob.join(); tcpJob.join()
-            if (!winner.get()) {
-                AppLogger.w(TAG, "[$label] DC$dc both fallback methods failed")
+
+            workerJob?.join(); cfJob?.join(); tcpJob.join()
+        } else {
+            // Sequential fallback: worker → cf → tcp
+            for (method in methods) {
+                when (method) {
+                    "worker" -> {
+                        if (cfWorkerFallback(cltInput, cltOutput, relayInit, label, ctx, dc, isMedia, fallbackDst!!, splitter)) return
+                    }
+                    "cf" -> {
+                        if (cfproxyFallback(cltInput, cltOutput, relayInit, label, ctx, dc, isMedia, splitter)) return
+                    }
+                    "tcp" -> {
+                        if (fallbackDst != null && tcpFallback(cltInput, cltOutput, fallbackDst, 443, relayInit, ctx)) return
+                    }
+                }
             }
         }
+    }
+
+    /**
+     * CF Worker fallback: connects to Cloudflare Worker domain passing the DC destination IP.
+     * Uses a dedicated connection pool for faster reconnection.
+     */
+    private suspend fun cfWorkerFallback(
+        cltInput: InputStream, cltOutput: OutputStream, relayInit: ByteArray,
+        label: String, ctx: CryptoCtx, dc: Int, isMedia: Boolean,
+        fallbackDst: String, splitter: MsgSplitter?
+    ): Boolean {
+        val workerDomains = config.cfproxyWorkerDomains.toList().shuffled()
+        val mediaTag = if (isMedia) " media" else ""
+
+        for (workerDomain in workerDomains) {
+            var ws = cfWorkerPool.get(dc, workerDomain, fallbackDst)
+            if (ws != null) {
+                AppLogger.i(TAG, "[$label] DC$dc$mediaTag -> CF worker pool hit for $fallbackDst")
+                stats.connectionsCfproxy.incrementAndGet()
+                ws.send(relayInit)
+                bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
+                return true
+            }
+
+            val query = "dst=${java.net.URLEncoder.encode(fallbackDst, "UTF-8")}&dc=$dc"
+            val wsPath = "/apiws?$query"
+            AppLogger.i(TAG, "[$label] DC$dc$mediaTag -> trying CF worker $workerDomain for $fallbackDst")
+
+            try {
+                ws = RawWebSocket.connect(
+                    workerDomain, workerDomain, 10_000,
+                    useDoH = config.useDoH,
+                    dohEndpoints = config.dohEndpoints,
+                    retryMax = 1,
+                    path = wsPath
+                )
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "[$label] DC$dc$mediaTag CF worker $workerDomain failed: ${e.message}")
+                continue
+            }
+
+            if (ws == null) {
+                AppLogger.w(TAG, "[$label] DC$dc$mediaTag CF worker $workerDomain rejected (status=${RawWebSocket.lastStatusCode})")
+                continue
+            }
+
+            stats.connectionsCfproxy.incrementAndGet()
+            ws.send(relayInit)
+            bridgeWsReencrypt(cltInput, cltOutput, ws, label, ctx, dc, isMedia, splitter)
+            return true
+        }
+        return false
     }
 
     private suspend fun cfproxyFallback(cltInput: InputStream, cltOutput: OutputStream, relayInit: ByteArray, label: String, ctx: CryptoCtx, dc: Int, isMedia: Boolean, splitter: MsgSplitter?): Boolean {

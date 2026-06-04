@@ -26,7 +26,8 @@
     <string name="switch_parallel">Parallel connect to multiple IPs</string>
     <string name="switch_media_cf">Media via CF (traffic saving)</string>
     <string name="switch_cf_proxy">CF Proxy fallback</string>
-    <string name="switch_cf_priority">CF Proxy priority</string>
+    <string name="hint_cf_user_domain">CF-proxy custom domains (comma-separated)</string>
+    <string name="hint_cf_worker_domain">CF Worker domains (comma-separated)</string>
     <string name="switch_background">Work in background</string>
     <string name="switch_auto_check_updates">Auto check for updates</string>
     <string name="switch_ws_padding">WS frame padding (DPI obfuscation)</string>

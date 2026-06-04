@@ -469,17 +469,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadSettingsToUI() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        if (prefs.getInt("settings_version", 0) < 1) {
+        if (prefs.getInt("settings_version", 0) < 2) {
+            // v2: remove cfproxy_priority, add cfproxy_worker_domain
             prefs.edit()
                 .putBoolean("cfproxy", true)
-                .putBoolean("cfproxy_priority", true)
                 .putBoolean("use_doh", true)
                 .putBoolean("auto_fake_tls", true)
                 .putBoolean("parallel_connect", true)
                 .putBoolean("media_via_cf", true)
                 .putBoolean("ws_frame_padding", false)
                 .putBoolean("doh_rotation", true)
-                .putInt("settings_version", 1)
+                .putBoolean("work_in_background", true)
+                .putInt("settings_version", 2)
                 .apply()
         }
         if (!prefs.contains("secret") || prefs.getString("secret", "")?.isEmpty() == true) {
@@ -492,9 +493,10 @@ class MainActivity : AppCompatActivity() {
         binding.dcInput.setText(prefs.getString("dc_ip", "2:149.154.167.220\n4:149.154.167.220"))
         binding.fakeTlsInput.setText(prefs.getString("fake_tls_domain", ""))
         binding.poolSizeInput.setText(prefs.getInt("pool_size", 4).toString())
+        binding.cfproxyUserDomainInput.setText(prefs.getString("cfproxy_user_domain", ""))
+        binding.cfWorkerDomainInput.setText(prefs.getString("cfproxy_worker_domain", ""))
 
         binding.cfproxySwitch.isChecked = prefs.getBoolean("cfproxy", true)
-        binding.cfproxyPrioritySwitch.isChecked = prefs.getBoolean("cfproxy_priority", true)
         binding.useDoHSwitch.isChecked = prefs.getBoolean("use_doh", true)
         binding.autoFakeTlsSwitch.isChecked = prefs.getBoolean("auto_fake_tls", true)
         binding.parallelConnectSwitch.isChecked = prefs.getBoolean("parallel_connect", true)
@@ -552,7 +554,8 @@ class MainActivity : AppCompatActivity() {
             .putString("fake_tls_domain", fakeTls)
             .putInt("pool_size", poolSize)
             .putBoolean("cfproxy", binding.cfproxySwitch.isChecked)
-            .putBoolean("cfproxy_priority", binding.cfproxyPrioritySwitch.isChecked)
+            .putString("cfproxy_user_domain", binding.cfproxyUserDomainInput.text.toString().trim())
+            .putString("cfproxy_worker_domain", binding.cfWorkerDomainInput.text.toString().trim())
             .putBoolean("use_doh", binding.useDoHSwitch.isChecked)
             .putBoolean("auto_fake_tls", binding.autoFakeTlsSwitch.isChecked)
             .putBoolean("parallel_connect", binding.parallelConnectSwitch.isChecked)

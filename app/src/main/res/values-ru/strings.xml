@@ -26,7 +26,8 @@
     <string name="switch_parallel">Параллельный коннект к нескольким IP</string>
     <string name="switch_media_cf">Медиа через CF (экономия трафика)</string>
     <string name="switch_cf_proxy">CF Proxy fallback</string>
-    <string name="switch_cf_priority">CF Proxy приоритет</string>
+    <string name="hint_cf_user_domain">Свои CF-proxy домены (через запятую)</string>
+    <string name="hint_cf_worker_domain">Свои CF Worker домены (через запятую)</string>
     <string name="switch_background">Работать в фоне</string>
     <string name="switch_auto_check_updates">Автоматически проверять обновления</string>
     <string name="switch_ws_padding">WS frame padding (обфускация DPI)</string>
