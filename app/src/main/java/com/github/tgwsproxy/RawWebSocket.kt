@@ -338,13 +338,10 @@ class RawWebSocket private constructor(
                     sslSocket.close(); plainSocket = null; sslSocket = null
                     return null
                 }
-                // Prevent silent hangs from network changes / Doze: set a read timeout
-                // slightly above the keep-alive interval (25s) so a stalled socket
-                // is detected and threads are released instead of leaking.
-                // Set to 0 (infinite) for media sessions — large file downloads may
-                // have long pauses between chunks. The keepalive PING/PONG loop
-                // in bridgeWsReencrypt detects dead connections instead.
-                sslSocket.soTimeout = 0
+                // Read timeout: 60s safety net. Keepalive PING (25s) detects most dead
+                // connections faster, but this catches cases where TCP buffers accept
+                // writes even though the network is down. Long enough for media pauses.
+                sslSocket.soTimeout = 60_000
                 AppLogger.i(logTag, "WS established $targetIp/$domain")
                 val result = RawWebSocket(sslSocket.getInputStream(), sslSocket.getOutputStream(), sslSocket)
                 plainSocket = null; sslSocket = null // ownership transferred
@@ -412,11 +409,9 @@ class RawWebSocket private constructor(
      * Send a WebSocket PING frame.
      */
     fun ping(data: ByteArray = ByteArray(0)) {
-        if (closed) return
-        try {
-            output.write(buildFrame(OP_PING, data, mask = true))
-            output.flush()
-        } catch (_: Exception) {}
+        if (closed) throw java.io.IOException("WebSocket closed")
+        output.write(buildFrame(OP_PING, data, mask = true))
+        output.flush()
     }
 
     fun recv(): ByteArray? {

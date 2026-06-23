@@ -1,38 +1,27 @@
-## What's New in v1.7.2
+## What's New in v1.7.3
 
-### Critical Fix: Proxy Connection Loop
+### Critical Fix: Keepalive Killing Live Connections
 
-**Problem:** Proxy enters infinite reconnect loop — connects, briefly works, then resets and reconnects endlessly.
+**Problem:** Connections were being killed after 25–35 seconds, media channels never loaded.
 
-**Root causes found and fixed:**
+**Root cause:** The keepalive `lastPong` logic was broken:
 
-### 1. Broken CF Domain Decoder (CRITICAL)
+1. `recv()` processes PONG frames internally (`OP_PONG → continue`) and **never returns** to the caller
+2. `lastPong` was only set to `true` when `recv()` returned data (binary/text frames)
+3. Keepalive checked `lastPong` every 25s — saw `false` (PONG was swallowed) → closed the connection
+4. Media sessions died at exactly 25.2s (`^722,0B v8,0B 25,2s`) — one keepalive interval
+5. Regular sessions survived slightly longer (35.1s) if data arrived, but died on the second cycle
 
-The Caesar cipher decoder `_dd()` in `ProxyConfig.kt` and `ProxyService.kt` used Kotlin's `%` operator, which returns **negative** values for negative operands (unlike Python's `%` which always returns non-negative). This caused 13 out of 15 CF proxy domains to decode as garbage:
+**Fix:** Removed `lastPong` logic entirely. Keepalive now simply sends PING every 25s (matching upstream v1.7.3 `_ws_keepalive`). Dead connections are detected by:
+- `soTimeout = 60s` on upstream WS socket (safety net)
+- `ping()` throws `IOException` if socket is dead → keepalive catches it and closes
 
-```
-Expected: kws2.yorokdda.co.uk
-Got:      kws2.Yorokd\a.co.uk  ← backslash from negative modulo
-```
+### Also Fixed
 
-DNS resolution failed for all 13 corrupted domains → balancer slowly iterated through garbage → Telegram kept reconnecting → infinite loop.
-
-**Fix:** Replaced `%` with `Math.floorMod()` which matches Python's non-negative modulo behavior.
-
-| File | Change |
-|------|--------|
-| `ProxyConfig.kt:78` | `(c.code - base - n) % 26` → `Math.floorMod(c.code - base - n, 26)` |
-| `ProxyService.kt:343` | Same fix in `decodeCfDomain()` |
-
-### 2. Network Callback Over-Triggering
-
-`onCapabilitiesChanged()` fired on every minor network change (signal strength, validated status) — every ~60 seconds on mobile networks. Each trigger called `resetForNetworkChange()` which:
-- Cleared all WS pool connections
-- Cleared all cooldown/blacklist state
-- Launched new warmup
-- Killed active Telegram sessions → reconnect loop
-
-**Fix:** Removed `onCapabilitiesChanged` trigger — only `onAvailable` (new network) and `onLost` (network disconnected) trigger recovery now. Also increased debounce from 2s to 5s.
+| Fix | File | Change |
+|-----|------|--------|
+| `ping()` now throws on error | `RawWebSocket.kt:411` | `catch (_: Exception) {}` → `throw IOException` — keepalive can detect dead sockets |
+| Upstream WS `soTimeout` | `RawWebSocket.kt:347` | `0` (infinite) → `60_000` (60s safety net) |
 
 ---
 
@@ -56,4 +45,4 @@ DNS resolution failed for all 13 corrupted domains → balancer slowly iterated 
 
 | File | SHA-256 |
 |------|---------|
-| `tg-ws-proxy-android.apk` | `4DA12E3712B079C7EC2C51AAC5AC4F125060C92BB5ACAFD451C3D7A0C2F23D10` |
+| `tg-ws-proxy-android.apk` | `BB149972E1211E9657A1828822936D15877DE1850FAC64A54E67481D6680023C` |

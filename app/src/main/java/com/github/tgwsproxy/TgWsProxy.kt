@@ -626,7 +626,6 @@ class TgWsProxy(
         dc: Int, isMedia: Boolean, splitter: MsgSplitter?
     ) {
         var upBytes = 0L; var downBytes = 0L; val startTime = System.currentTimeMillis()
-        val lastPong = AtomicBoolean(true)
         try {
             val upJob = scope.launch {
                 try {
@@ -654,8 +653,6 @@ class TgWsProxy(
                 try {
                     while (isActive()) {
                         val data = ws.recv() ?: break
-                        // Any frame received means connection is alive (including empty PONG)
-                        lastPong.set(true)
                         stats.bytesDown.addAndGet(data.size.toLong()); downBytes += data.size
                         val plain = ctx.tgDec.update(data)
                         val encrypted = ctx.cltEnc.update(plain)
@@ -667,16 +664,14 @@ class TgWsProxy(
                 try {
                     while (isActive()) {
                         delay(config.wsKeepaliveIntervalMs)
-                        if (!lastPong.get()) {
-                            AppLogger.w(TAG, "[$label] WS keepalive timeout, closing")
-                            ws.close()
-                            break
-                        }
-                        lastPong.set(false)
                         ws.ping(byteArrayOf(0x01, 0x02, 0x03, 0x04))
                         AppLogger.d(TAG, "[$label] WS keepalive PING sent")
                     }
                 } catch (_: CancellationException) {}
+                catch (e: Exception) {
+                    AppLogger.w(TAG, "[$label] WS keepalive PING failed, closing: ${e.message}")
+                    ws.close()
+                }
             }
             // Wait for EITHER uplink or downlink to complete (FIRST_COMPLETED),
             // then cancel the other and the keepalive. This matches upstream
