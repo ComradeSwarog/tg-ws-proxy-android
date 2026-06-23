@@ -2,17 +2,19 @@
 
 [![Android](https://img.shields.io/badge/Android-8.0%2B-green)](https://developer.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9-blueviolet)](https://kotlinlang.org/)
+[![Version](https://img.shields.io/badge/Version-1.7.0-blue)](https://github.com/ComradeSwarog/tg-ws-proxy-android/releases/latest)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > Android Kotlin port of [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) by [Flowseal](https://github.com/Flowseal).
 >
 > A **Telegram MTProto WebSocket Bridge Proxy** with advanced DPI bypass for Android devices.
+> **Synced to upstream v1.7.2.**
 
 ---
 
 ## What is this?
 
-**tg-ws-proxy-android** is an Android application that creates a local MTProto proxy server on your phone. It connects to Telegram's WebSocket (WS) endpoints using DPI-bypass techniques: DoH resolution, Cloudflare fallback, parallel connections, and fake TLS handshakes.
+**tg-ws-proxy-android** is an Android application that creates a local MTProto proxy server on your phone. It connects to Telegram's WebSocket (WS) endpoints using DPI-bypass techniques: DoH resolution, Cloudflare Worker/Proxy fallback, parallel connections, and fake TLS handshakes.
 
 ### Why not just use the original Python proxy?
 
@@ -31,10 +33,13 @@ The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as 
 | Feature | Description |
 |---|---|
 | **MTProto ↔ WebSocket Bridge** | Transparent bridge between Telegram app and Telegram DCs |
+| **Cloudflare Worker Support** | Free alternative to CF Proxy — deploy a Worker on your CF account, no domain purchase needed. Pre-warmed pool per DC × worker domain |
+| **Multi-Domain CF Proxy** | Comma-separated custom CF-proxy domains. Balancer rotates domains with per-DC affinity |
+| **Simplified Priority Chain** | Fixed fallback order: CF Worker → CF Proxy → Direct WS → TCP (no config toggle — matches upstream v1.7.0+) |
 | **Parallel Race (Direct vs CF)** | On first connect, races direct WS and CF fallback simultaneously — winner bridges instantly |
 | **CF-Proven Mode** | After 2+ CF successes, skips slow direct attempts for 5 min; auto-recovers when network improves |
+| **O(N) Packet Splitter** | Offset-pointer MTProto packet splitting — no O(N²) array shifts (matches upstream optimization) |
 | **DoH (DNS-over-HTTPS)** | Bypass DNS spoofing with encrypted DNS resolution |
-| **CF Proxy Fallback** | Automatic fallback via Cloudflare Workers if direct IPs are blocked |
 | **Parallel Connect** | Race multiple IPs simultaneously for sub-second handshakes |
 | **Auto Fake TLS** | Automatic TLS SNI camouflage for DPI bypass |
 | **Media via CF** | Route media traffic through Cloudflare to save bandwidth |
@@ -45,11 +50,12 @@ The original [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) runs as 
 | **Auto Network Recovery** | Detects WiFi/mobile network switches and instantly resets stale state (cooldowns, pool, blacklist, WifiLock) |
 | **Foreground Service Hardening** | `dataSync` type + `WakeLock` + `WifiLock` — Samsung/Android 16 won't throttle network I/O after 30 min |
 | **WakeLock Refresh** | Re-acquires wake lock every 25 min before Samsung's timeout expires |
+| **Auto CF Domain Refresh** | Fetches updated CF proxy domain list from upstream repo every hour |
 | **In-app Logs** | Live log viewer with export to `.txt` (share or save to Downloads) |
 | **Auto-generated Secret** | Fresh 32-hex secret generated on first launch. Tap the inline refresh icon to regenerate anytime |
 | **RU / EN Localization** | Auto-detect system language; manual switcher in Bypass Settings |
 | **In-app Help** | Localized help screen with full feature docs |
-| **Check for Updates** | Automatic GitHub Releases check on startup; manual button in toolbar |
+| **Auto-Update** | Downloads and installs APK directly from GitHub Releases |
 
 ---
 
@@ -73,7 +79,7 @@ Download from [Releases](../../releases).
 ### SHA-256 Checksum
 
 ```
-94BC618BFB18A57852728513C616CC9A9AEE9A00F11637079E72023D9B8717F7
+DF29B3AFF16E703043126185472909F316D3BF2F55AFE54E2B61D64F7A71AB34
 ```
 
 Verify after download:
@@ -84,6 +90,10 @@ Get-FileHash -Path "tg-ws-proxy-android.apk" -Algorithm SHA256
 # Linux / macOS
 sha256sum tg-ws-proxy-android.apk
 ```
+
+---
+
+## Build from Source
 
 ```bash
 # Debug APK
@@ -105,7 +115,8 @@ Outputs:
 |---|---|
 | **Direct WS** | Connects to `kws{dc}.web.telegram.org` via DoH + parallel TCP |
 | **Parallel Race** | First connect: races direct WS vs CF fallback simultaneously, winner bridges |
-| **CF Fallback** | Direct WebSocket failed or DPI blocks it; automatic via Cloudflare Workers |
+| **CF Worker** | Connects to user-deployed Cloudflare Worker at `wss://<worker-domain>/apiws?dst=<DC_IP>&dc=<N>` |
+| **CF Proxy Fallback** | Connects to `kws{dc}.<cf-domain>` — uses Balancer with per-DC domain affinity |
 | **CF-Proven Fast Path** | After 2+ CF successes for a DC, skips direct entirely for 5 min |
 | **TCP Fallback** | Plain TCP to known DC IPs as last resort |
 
@@ -116,12 +127,13 @@ Outputs:
 | DoH resolving | ✅ on | Encrypted DNS resolution |
 | Auto Fake TLS | ✅ on | SNI camo when direct IP blocked |
 | Parallel connect | ✅ on | Multi-IP race for fast fallback |
-| CF Proxy fallback | ✅ on | Use CF Worker backup |
-| CF Proxy priority | ✅ on | Try CF before direct |
-| Media via CF | ✅ off | Route downloads through CF |
+| CF Proxy fallback | ✅ on | Enable Cloudflare-based fallback |
+| CF-proxy custom domains | *(empty)* | Comma-separated user domains (replaces auto-pool) |
+| CF Worker domains | *(empty)* | Comma-separated Cloudflare Worker domains |
+| Media via CF | ✅ on | Route downloads through CF |
 | WS frame padding | ⬜ off | Random WS frame padding (DPI obfuscation) |
 | Rotate DoH providers | ✅ on | Cycle Cloudflare → Google → Quad9 |
-| Work in background | ⬜ off | Keep proxy alive after UI close |
+| Work in background | ✅ on | Keep proxy alive after UI close |
 | Language | Auto | Auto / Russian / English |
 | Auto check for updates | ✅ on | Check GitHub Releases on startup |
 
@@ -133,7 +145,6 @@ Outputs:
 |---|---|---|
 | **QUIC transport instead of WS** | 🔮 **Research** | QUIC (UDP-based, HTTP/3) is harder for DPI to fingerprint and has faster 0-RTT handshake. Telegram does not yet expose QUIC for MTProto WebSocket; experimental if backend support appears. |
 | **WireGuard / OpenVPN tunnel integration** | 🔮 **Research** | Would turn the app into a system-level VPN tunnel (`VpnService`) so all traffic (not just Telegram) is bypassed. This is a major architecture shift — evaluate if out of scope. |
-| **Auto-update domain pool from upstream repo** | 📋 **Planned** | Periodically fetch fresh CF Worker domains from the upstream `tg-ws-proxy` pool. |
 
 **Not on the roadmap:** F-Droid publication, iOS port.
 
@@ -162,17 +173,17 @@ Full changelog: [CHANGELOG.md](CHANGELOG.md)
 | Original Python | Kotlin port |
 |---|---|
 | `proxy/tg_ws_proxy.py` | `TgWsProxy.kt` |
-| `proxy/bridge.py` | Bridge + fallback logic in `TgWsProxy.kt` |
-| `proxy/fake_tls.py` | `handleFakeTLS`, `FakeTlsInputStream` |
+| `proxy/bridge.py` | `MsgSplitter.kt` + bridge/fallback logic in `TgWsProxy.kt` |
+| `proxy/pool.py` | `WsPool` + `CfWorkerPool` in `TgWsProxy.kt` |
+| `proxy/fake_tls.py` | `handleFakeTLS`, `FakeTlsInputStream` in `TgWsProxy.kt` |
 | `proxy/raw_websocket.py` | `RawWebSocket.kt` |
 | `proxy/config.py` | `ProxyConfig.kt` |
 | `proxy/stats.py` | `ProxyStats.kt` |
 | `proxy/balancer.py` | `Balancer.kt` |
-| `proxy/doh_resolver.py` | `DoHResolver.kt` |
 | `proxy/utils.py` | `MtProtoConstants.kt` |
-| `ui/settings.py` | `MainActivity.kt` + `HelpActivity.kt` |
+| `ui/ctk_tray_ui.py` | `MainActivity.kt` + `HelpActivity.kt` |
 | `utils/update_check.py` | `UpdateChecker.kt` |
-| `utils/locale.py` | `LocaleUtils.kt` |
+| `utils/tray_common.py` | `ProxyService.kt` |
 
 ---
 
@@ -202,7 +213,7 @@ Based on [**tg-ws-proxy**](https://github.com/Flowseal/tg-ws-proxy) by [Flowseal
 
 - Original idea and protocol design: **[Flowseal](https://github.com/Flowseal)** and contributors to [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy)
 - MTProto protocol: Telegram Messenger LLP
-- CF proxy domain pool: community-curated, refreshed from upstream repo
+- CF proxy domain pool: community-curated, auto-refreshed from upstream repo every hour
 
 ---
 

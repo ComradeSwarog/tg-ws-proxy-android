@@ -15,6 +15,7 @@ import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import javax.crypto.Cipher
 import javax.crypto.Mac
 import javax.crypto.spec.IvParameterSpec
@@ -134,7 +135,7 @@ class TgWsProxy(
                 try {
                     val client = server.accept()
                     client.tcpNoDelay = true
-                    client.soTimeout = 30_000
+                    client.soTimeout = 0
                     client.sendBufferSize = config.bufferSize
                     client.receiveBufferSize = config.bufferSize
                     scope.launch { handleClient(client, secretBytes) }
@@ -665,7 +666,7 @@ class TgWsProxy(
             val keepAliveJob = scope.launch {
                 try {
                     while (isActive()) {
-                        delay(KEEPALIVE_INTERVAL_MS)
+                        delay(config.wsKeepaliveIntervalMs)
                         if (!lastPong.get()) {
                             AppLogger.w(TAG, "[$label] WS keepalive timeout, closing")
                             ws.close()
@@ -677,7 +678,22 @@ class TgWsProxy(
                     }
                 } catch (_: CancellationException) {}
             }
-            upJob.join(); downJob.cancelAndJoin(); keepAliveJob.cancel()
+            // Wait for EITHER uplink or downlink to complete (FIRST_COMPLETED),
+            // then cancel the other and the keepalive. This matches upstream
+            // asyncio.wait(FIRST_COMPLETED). Critical for media: downlink
+            // (receiving photos/videos) may be active while uplink is idle —
+            // must not kill downlink when uplink is quiet.
+            val winner = AtomicReference<Job?>(null)
+            val done = java.util.concurrent.CountDownLatch(1)
+            upJob.invokeOnCompletion { if (winner.compareAndSet(null, upJob)) done.countDown() }
+            downJob.invokeOnCompletion { if (winner.compareAndSet(null, downJob)) done.countDown() }
+            done.await()
+            keepAliveJob.cancel()
+            if (winner.get() != upJob) upJob.cancel()
+            if (winner.get() != downJob) downJob.cancel()
+            try { upJob.join() } catch (_: Exception) {}
+            try { downJob.join() } catch (_: Exception) {}
+            try { keepAliveJob.join() } catch (_: Exception) {}
         } finally {
             ws.close()
             val elapsed = (System.currentTimeMillis() - startTime) / 1000.0
@@ -715,7 +731,16 @@ class TgWsProxy(
                     }
                 } catch (e: Exception) { AppLogger.d(TAG, "TCP bridge downlink error: ${e.message}") }
             }
-            upJob.join(); downJob.cancelAndJoin()
+            // FIRST_COMPLETED: either direction closing ends the bridge
+            val winner = AtomicReference<Job?>(null)
+            val done = java.util.concurrent.CountDownLatch(1)
+            upJob.invokeOnCompletion { if (winner.compareAndSet(null, upJob)) done.countDown() }
+            downJob.invokeOnCompletion { if (winner.compareAndSet(null, downJob)) done.countDown() }
+            done.await()
+            if (winner.get() != upJob) upJob.cancel()
+            if (winner.get() != downJob) downJob.cancel()
+            try { upJob.join() } catch (_: Exception) {}
+            try { downJob.join() } catch (_: Exception) {}
         } finally {}
     }
 

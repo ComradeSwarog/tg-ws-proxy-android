@@ -36,6 +36,7 @@ data class ProxyConfig(
     var mediaViaCf: Boolean = false,
     var tcpFallbackTls: Boolean = false,
     var verbose: Boolean = false,
+    var wsKeepaliveIntervalMs: Long = 25_000L,
 ) {
     companion object {
         val DC_DEFAULT_IPS = mapOf(

@@ -1,44 +1,49 @@
-## What's New
+## What's New in v1.7.1
 
-### Ported from upstream tg-ws-proxy v1.6.4
+### Media Loading Fix
 
-- **Redirect-aware WS error handling** — `RawWebSocket.connect()` now tracks HTTP status codes and whether the response was a redirect (301/302/303/307/308). This enables smarter failure decisions instead of treating all WS failures equally.
-- **WS blacklist** — restored the `wsBlacklist` feature that was lost during v1.6.0 refactoring. When all Telegram domains return HTTP redirects for a DC, that DC is permanently blacklisted for WS and falls back to CF/TCP immediately on subsequent connections.
-- **DC fail cooldown 30s** — reduced from 60s to 30s to match upstream. Failed DCs are retried sooner on networks where DPI is intermittent.
+**Problem:** Photos and videos stopped loading in Telegram when using the proxy.
 
-### Simplified Balancer
+**Root cause:** Three issues combined to break media sessions:
 
-Removed domain blacklisting and exponential backoff from `Balancer.kt` to match upstream behaviour. The blacklist could block perfectly working domains for up to 30 minutes after a network switch, while the original Python Balancer rotates domains freely and lets the connection code decide which ones work.
+1. **Client socket `soTimeout = 30s`** — media downloads can have pauses > 30s between packets. The `cltInput.read()` would throw `SocketTimeoutException`, killing the uplink job and closing the session prematurely.
 
-### Technical Details
+2. **Upstream WS `soTimeout = 35s`** — large media files from Telegram's media servers can have pauses > 35s between chunks. The `ws.recv()` would timeout, killing the downlink job.
 
-- `RawWebSocket.lastStatusCode` / `RawWebSocket.lastWasRedirect` — static fields populated on every WS handshake attempt
-- `TgWsProxy.connectRawWsEnhanced()` accumulates redirect flags across domain attempts
-- `TgWsProxy.cfproxyConnectOnly()` / `cfproxyFallback()` / `testCfForDc()` — removed `markDomainFailed()` calls
-- `Balancer` — removed `domainBlacklist`, `domainFailCount`, `markDomainFailed()`, `resetBlacklist()`
-- `ProxyService.onNetworkChanged()` — removed `balancer.resetBlacklist()` call (method no longer exists)
+3. **Bridge join logic `upJob.join(); downJob.cancelAndJoin()`** — waited only for **uplink** completion, then killed **downlink**. But during media downloads, the uplink is idle (client only receives data), while downlink is actively streaming the photo/video. The old logic killed the active downlink when the idle uplink timed out.
 
----
+### Fixes Applied
 
-## Full Changelog (v1.6.2 → v1.6.3)
+| Fix | File | Change |
+|-----|------|--------|
+| Client socket timeout → 0 (infinite) | `TgWsProxy.kt:137` | `soTimeout = 30_000` → `soTimeout = 0` |
+| Upstream WS timeout → 0 (infinite) | `RawWebSocket.kt:341` | `soTimeout = 35_000` → `soTimeout = 0` |
+| Bridge: FIRST_COMPLETED semantics | `TgWsProxy.kt` `bridgeWsReencrypt` | `upJob.join(); downJob.cancelAndJoin()` → `AtomicReference<Job?>` + `CountDownLatch` — whichever direction finishes first wins, the other is cancelled |
+| TCP bridge: same FIRST_COMPLETED fix | `TgWsProxy.kt` `bridgeTcpReencrypt` | Same pattern applied |
+| Keepalive interval configurable | `ProxyConfig.kt` | Added `wsKeepaliveIntervalMs: Long = 25_000L` (ported from upstream v1.7.3) |
 
-- Added `RawWebSocket.lastStatusCode` and `lastWasRedirect` static fields
-- `connectRawWsEnhanced()` now logs HTTP status and redirect flags per domain attempt
-- Restored `wsBlacklist` check in `handleClient()` — blacklisted DCs skip race and go straight to fallback
-- DC fail cooldown: 60s → 30s (matches upstream `DC_FAIL_COOLDOWN = 30.0`)
-- Simplified `Balancer.kt` — removed domain blacklist, fail count, `markDomainFailed()`, `resetBlacklist()`
-- Removed all `markDomainFailed()` calls from `cfproxyConnectOnly()`, `cfproxyFallback()`, `testCfForDc()`
-- Removed `balancer.resetBlacklist()` call from `ProxyService.onNetworkChanged()`
+### Why this works
+
+- **`soTimeout = 0`** means no artificial timeout on reads — the socket waits indefinitely for data
+- **Dead connections are now detected by the keepalive PING/PONG loop** (not by socket timeout):
+  1. Every 25s, `ws.ping()` sends a WebSocket PING to the upstream
+  2. `recv()` processes PONG and sets `lastPong = true`
+  3. If no PONG received before next interval, `ws.close()` kills the session
+- **FIRST_COMPLETED** matches upstream `asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)` — the bridge ends when either direction naturally closes, not when one side goes quiet
+
+### Synced with upstream v1.7.3
+
+Upstream commit `96e5b4b` ("fix: add WebSocket keepalive pings to prevent idle disconnects (#646)") added the same keepalive PING approach. Our implementation already had keepalive, but the socket timeouts were overriding it. Now both work together correctly.
 
 ---
 
 ## How to Install
 
-1. Download `tg-ws-proxy-android.apk` below.
-2. Transfer to your Android device.
-3. Open the APK — grant installation permission.
-4. Tap **Start** to launch the proxy.
-5. Copy the link into Telegram → Settings → Proxy Settings → Add Proxy.
+1. Download `tg-ws-proxy-android.apk` below
+2. Transfer to your Android device
+3. Open the APK — grant installation permission
+4. Tap **Start** to launch the proxy
+5. Copy the link into Telegram → Settings → Proxy Settings → Add Proxy
 
 ---
 
@@ -52,4 +57,4 @@ Removed domain blacklisting and exponential backoff from `Balancer.kt` to match 
 
 | File | SHA-256 |
 |------|---------|
-| `tg-ws-proxy-android.apk` | `294A14CB67DA572CC61A145818F0968174EF708C0DF87727226F76E97A2669B3` |
+| `tg-ws-proxy-android.apk` | `C7B375AAEA2B6B27AD9302F6DF1929C4719254C7BF9FEC4340A3AE68C702AEE7` |
