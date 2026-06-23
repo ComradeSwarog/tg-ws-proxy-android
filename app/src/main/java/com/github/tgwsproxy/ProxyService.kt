@@ -69,7 +69,7 @@ class ProxyService : Service() {
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var lastNetworkChangeTime = 0L
-    private val networkChangeDebounceMs = 2_000L
+    private val networkChangeDebounceMs = 5_000L
 
     override fun onCreate() {
         super.onCreate()
@@ -167,10 +167,12 @@ class ProxyService : Service() {
                 }
                 override fun onLost(network: Network) {
                     AppLogger.w(TAG, "Network lost")
+                    onNetworkChanged()
                 }
                 override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                    AppLogger.i(TAG, "Network capabilities changed, triggering recovery")
-                    onNetworkChanged()
+                    // Only trigger recovery if network actually changed (not just capability tweak)
+                    // onCapabilitiesChanged fires frequently on mobile networks for minor changes
+                    // (signal strength, validated status, etc.) — don't reset the proxy for those.
                 }
             }
             connectivityManager?.registerDefaultNetworkCallback(networkCallback!!)
@@ -338,7 +340,7 @@ class ProxyService : Service() {
         val decoded = p.map { c ->
             if (c.isLetter()) {
                 val base = if (c > '`') 97 else 65
-                ((c.code - base - n) % 26 + base).toChar()
+                (Math.floorMod(c.code - base - n, 26) + base).toChar()
             } else c
         }.joinToString("")
         return decoded + ".co.uk"

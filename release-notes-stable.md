@@ -1,39 +1,38 @@
-## What's New in v1.7.1
+## What's New in v1.7.2
 
-### Media Loading Fix
+### Critical Fix: Proxy Connection Loop
 
-**Problem:** Photos and videos stopped loading in Telegram when using the proxy.
+**Problem:** Proxy enters infinite reconnect loop — connects, briefly works, then resets and reconnects endlessly.
 
-**Root cause:** Three issues combined to break media sessions:
+**Root causes found and fixed:**
 
-1. **Client socket `soTimeout = 30s`** — media downloads can have pauses > 30s between packets. The `cltInput.read()` would throw `SocketTimeoutException`, killing the uplink job and closing the session prematurely.
+### 1. Broken CF Domain Decoder (CRITICAL)
 
-2. **Upstream WS `soTimeout = 35s`** — large media files from Telegram's media servers can have pauses > 35s between chunks. The `ws.recv()` would timeout, killing the downlink job.
+The Caesar cipher decoder `_dd()` in `ProxyConfig.kt` and `ProxyService.kt` used Kotlin's `%` operator, which returns **negative** values for negative operands (unlike Python's `%` which always returns non-negative). This caused 13 out of 15 CF proxy domains to decode as garbage:
 
-3. **Bridge join logic `upJob.join(); downJob.cancelAndJoin()`** — waited only for **uplink** completion, then killed **downlink**. But during media downloads, the uplink is idle (client only receives data), while downlink is actively streaming the photo/video. The old logic killed the active downlink when the idle uplink timed out.
+```
+Expected: kws2.yorokdda.co.uk
+Got:      kws2.Yorokd\a.co.uk  ← backslash from negative modulo
+```
 
-### Fixes Applied
+DNS resolution failed for all 13 corrupted domains → balancer slowly iterated through garbage → Telegram kept reconnecting → infinite loop.
 
-| Fix | File | Change |
-|-----|------|--------|
-| Client socket timeout → 0 (infinite) | `TgWsProxy.kt:137` | `soTimeout = 30_000` → `soTimeout = 0` |
-| Upstream WS timeout → 0 (infinite) | `RawWebSocket.kt:341` | `soTimeout = 35_000` → `soTimeout = 0` |
-| Bridge: FIRST_COMPLETED semantics | `TgWsProxy.kt` `bridgeWsReencrypt` | `upJob.join(); downJob.cancelAndJoin()` → `AtomicReference<Job?>` + `CountDownLatch` — whichever direction finishes first wins, the other is cancelled |
-| TCP bridge: same FIRST_COMPLETED fix | `TgWsProxy.kt` `bridgeTcpReencrypt` | Same pattern applied |
-| Keepalive interval configurable | `ProxyConfig.kt` | Added `wsKeepaliveIntervalMs: Long = 25_000L` (ported from upstream v1.7.3) |
+**Fix:** Replaced `%` with `Math.floorMod()` which matches Python's non-negative modulo behavior.
 
-### Why this works
+| File | Change |
+|------|--------|
+| `ProxyConfig.kt:78` | `(c.code - base - n) % 26` → `Math.floorMod(c.code - base - n, 26)` |
+| `ProxyService.kt:343` | Same fix in `decodeCfDomain()` |
 
-- **`soTimeout = 0`** means no artificial timeout on reads — the socket waits indefinitely for data
-- **Dead connections are now detected by the keepalive PING/PONG loop** (not by socket timeout):
-  1. Every 25s, `ws.ping()` sends a WebSocket PING to the upstream
-  2. `recv()` processes PONG and sets `lastPong = true`
-  3. If no PONG received before next interval, `ws.close()` kills the session
-- **FIRST_COMPLETED** matches upstream `asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)` — the bridge ends when either direction naturally closes, not when one side goes quiet
+### 2. Network Callback Over-Triggering
 
-### Synced with upstream v1.7.3
+`onCapabilitiesChanged()` fired on every minor network change (signal strength, validated status) — every ~60 seconds on mobile networks. Each trigger called `resetForNetworkChange()` which:
+- Cleared all WS pool connections
+- Cleared all cooldown/blacklist state
+- Launched new warmup
+- Killed active Telegram sessions → reconnect loop
 
-Upstream commit `96e5b4b` ("fix: add WebSocket keepalive pings to prevent idle disconnects (#646)") added the same keepalive PING approach. Our implementation already had keepalive, but the socket timeouts were overriding it. Now both work together correctly.
+**Fix:** Removed `onCapabilitiesChanged` trigger — only `onAvailable` (new network) and `onLost` (network disconnected) trigger recovery now. Also increased debounce from 2s to 5s.
 
 ---
 
@@ -57,4 +56,4 @@ Upstream commit `96e5b4b` ("fix: add WebSocket keepalive pings to prevent idle d
 
 | File | SHA-256 |
 |------|---------|
-| `tg-ws-proxy-android.apk` | `C7B375AAEA2B6B27AD9302F6DF1929C4719254C7BF9FEC4340A3AE68C702AEE7` |
+| `tg-ws-proxy-android.apk` | `4DA12E3712B079C7EC2C51AAC5AC4F125060C92BB5ACAFD451C3D7A0C2F23D10` |

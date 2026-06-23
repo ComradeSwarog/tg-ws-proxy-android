@@ -75,7 +75,7 @@ data class ProxyConfig(
             return p.map { c ->
                 if (c.isLetter()) {
                     val base = if (c > '`') 97 else 65
-                    ((c.code - base - n) % 26 + base).toChar()
+                    (Math.floorMod(c.code - base - n, 26) + base).toChar()
                 } else c
             }.joinToString("") + _S
         }
